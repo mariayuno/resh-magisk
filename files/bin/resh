@@ -1,17 +1,13 @@
-#!/bin/sh
+#!/system/bin/sh
 # resh — Rex's Shell
-# Invoke from any root shell (ssh, su, adb) to get the sexy setup
+# Self-contained: uses bundled bins only, no Termux required
 
-REXSHELL_HOME="/data/adb/modules/rexshell/files"
-TERMUX_BIN="/data/data/com.termux/files/usr/bin"
+MOD="/data/adb/modules/rexshell/files"
 
-# PATH: bundled → termux → system
-export PATH="$REXSHELL_HOME/bin:$TERMUX_BIN:/system/bin:/system/xbin:/sbin:$PATH"
-
-# Root home (where sshd drops us)
+export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
+export PATH="$MOD/bin:/system/bin:/system/xbin"
 
-# XDG
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
@@ -19,37 +15,20 @@ export XDG_STATE_HOME="$HOME/.local/state"
 
 mkdir -p \
   "$HOME/.config/zsh" \
-  "$HOME/.local/share/oh-my-zsh" \
+  "$HOME/.local/share" \
   "$HOME/.cache/zsh" \
   "$HOME/.local/state/zsh"
 
-# Tell zsh to use our bundled config
-export ZDOTDIR="$REXSHELL_HOME/config/zsh"
+export ZDOTDIR="$MOD/config/zsh"
+export HISTFILE="$HOME/.local/state/zsh/history"
+export HISTSIZE=1000000
+export SAVEHIST=1000000
 
-# Termux extras
-export GNUPGHOME="$XDG_DATA_HOME/gnupg"
-export CARGO_HOME="$XDG_DATA_HOME/cargo"
-export GOPATH="$XDG_DATA_HOME/go"
-
-# Find zsh: bundled → termux → system
-for candidate in \
-    "$REXSHELL_HOME/bin/zsh" \
-    "$TERMUX_BIN/zsh" \
-    /system/bin/zsh \
-    /system/xbin/zsh; do
-  if [ -x "$candidate" ]; then
-    ZSH_BIN="$candidate"
-    break
-  fi
-done
-
-if [ -z "$ZSH_BIN" ]; then
-  printf '\033[1;31m[resh] zsh not found.\033[0m\n'
-  printf 'Install via Termux: pkg install zsh\n'
-  printf 'Or the module bundles one if built via CI.\n'
-  printf '\033[1;33mFalling back to sh...\033[0m\n'
-  export PS1='# '
-  exec /system/bin/sh
+ZSH="$MOD/bin/zsh"
+if [ ! -x "$ZSH" ]; then
+  printf '\033[1;31m[resh] bundled zsh not found at %s\033[0m\n' "$ZSH"
+  printf '[resh] run the GitHub Actions workflow to build bins\n'
+  exit 1
 fi
 
-exec "$ZSH_BIN" --login
+exec "$ZSH" --login

@@ -1,34 +1,36 @@
 #!/sbin/sh
 SKIPUNZIP=1
 MODDIR="/data/adb/modules/rexshell"
+
 ui_print() { echo "$1"; }
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-ui_print "  rexshell — sexy root shell"
+ui_print "  rexshell"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 mkdir -p "$MODDIR"
 unzip -o "$ZIPFILE" 'files/*' -d "$MODDIR" >&2
 
-chmod 755 "$MODDIR/files/bin/resh"
-chmod 755 "$MODDIR/files/bin/resh-setup"
+# Mark bins executable
+chmod 755 "$MODDIR/files/bin/"*
 
-# Put resh everywhere a root shell might look
-cp "$MODDIR/files/bin/resh" /data/local/tmp/resh && chmod 755 /data/local/tmp/resh
-mkdir -p /data/adb/ssh/root/bin
-cp "$MODDIR/files/bin/resh" /data/adb/ssh/root/bin/resh && chmod 755 /data/adb/ssh/root/bin/resh
-
-# Hook SSH: install .profile so login shells auto-exec resh
-# Backs up existing .profile first
+# Hook SSH: write .profile into root home so login shell auto-execs resh
 SSH_HOME="/data/adb/ssh/root"
-if [ -f "$SSH_HOME/.profile" ] && ! grep -q "rexshell" "$SSH_HOME/.profile"; then
-  cp "$SSH_HOME/.profile" "$SSH_HOME/.profile.pre-rexshell"
+mkdir -p "$SSH_HOME"
+
+# Backup existing .profile if not ours
+if [ -f "$SSH_HOME/.profile" ] && ! grep -q "rexshell" "$SSH_HOME/.profile" 2>/dev/null; then
+  cp "$SSH_HOME/.profile" "$SSH_HOME/.profile.bak"
 fi
-cp "$MODDIR/files/ssh_root_profile" "$SSH_HOME/.profile"
+
+cat > "$SSH_HOME/.profile" << 'PROFILE'
+#!/bin/sh
+# rexshell ssh hook
+[ -n "$REXSHELL_ACTIVE" ] && return 0
+export REXSHELL_ACTIVE=1
+exec /data/adb/modules/rexshell/files/bin/resh
+PROFILE
 chmod 644 "$SSH_HOME/.profile"
 
-# Same for .bash_profile and .bashrc (some sshd configs use these)
-cp "$MODDIR/files/ssh_root_profile" "$SSH_HOME/.bash_profile"
-chmod 644 "$SSH_HOME/.bash_profile"
-
-ui_print "  ✓ SSH hook installed → auto-launches resh on login"
-ui_print "  ✓ Run 'resh' from any root shell manually too"
+ui_print "  ✓ SSH hook: /data/adb/ssh/root/.profile"
+ui_print "  ✓ Invoke manually: resh"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

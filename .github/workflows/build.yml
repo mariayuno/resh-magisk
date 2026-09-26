@@ -1,0 +1,96 @@
+name: Build
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # weekly Monday 03:00 UTC
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Termux aarch64 packages
+        run: |
+          set -e
+          TERMUX_REPO="https://packages.termux.dev/apt/termux-main"
+          ARCH="aarch64"
+          TMP="$(mktemp -d)"
+          BIN="files/bin"
+          mkdir -p "$BIN"
+
+          # Download and extract a .deb, copy the named binary
+          get_bin() {
+            local pkg="$1" binary="$2"
+            echo "→ $pkg ($binary)"
+            local url
+            url=$(curl -sf "$TERMUX_REPO/dists/stable/main/binary-$ARCH/Packages" \
+              | awk "/^Package: $pkg\$/{found=1} found && /^Filename:/{print \$2; exit}")
+            [ -z "$url" ] && { echo "SKIP: $pkg not found in index"; return; }
+            curl -sfL "$TERMUX_REPO/$url" -o "$TMP/$pkg.deb"
+            dpkg-deb -x "$TMP/$pkg.deb" "$TMP/$pkg"
+            find "$TMP/$pkg" -name "$binary" -type f | head -1 | xargs -I{} cp {} "$BIN/$binary"
+            chmod 755 "$BIN/$binary"
+          }
+
+          get_bin zsh          zsh
+          get_bin eza          eza
+          get_bin bat          bat
+          get_bin fzf          fzf
+          get_bin ripgrep      rg
+          get_bin git          git
+          get_bin openssh      ssh
+
+      - name: Clone oh-my-zsh + plugins
+        run: |
+          OMZ="files/oh-my-zsh"
+          ZSH_CUSTOM="$OMZ/custom"
+          git clone --depth=1 https://github.com/ohmyzsh/ohmyzsh.git "$OMZ"
+          git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
+            "$ZSH_CUSTOM/themes/powerlevel10k"
+          git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions \
+            "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+          git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting \
+            "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+          git clone --depth=1 https://github.com/agkozak/zsh-z \
+            "$ZSH_CUSTOM/plugins/z"
+
+          # Strip .git from all cloned dirs to save space
+          find files/oh-my-zsh -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+
+      - name: List bundled bins
+        run: |
+          echo "=== Bundled bins ==="
+          ls -lh files/bin/
+          echo "=== oh-my-zsh size ==="
+          du -sh files/oh-my-zsh/
+
+      - name: Package zip
+        run: |
+          VERSION="$(date +%Y%m%d)"
+          sed -i "s/^version=.*/version=v$VERSION/" module.prop
+          sed -i "s/^versionCode=.*/versionCode=$VERSION/" module.prop
+          zip -r "rexshell-$VERSION.zip" \
+            META-INF module.prop files \
+            --exclude "*.git*" "*.github*"
+          echo "ZIP=rexshell-$VERSION.zip" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rexshell
+          path: "*.zip"
+
+      - name: Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "build-$(date +%Y%m%d)"
+          name: "rexshell $(date +%Y-%m-%d)"
+          files: "*.zip"
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
