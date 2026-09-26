@@ -1,0 +1,19 @@
+#!/bin/sh
+# /data/adb/ssh/root/.profile
+# Installed by rexshell module
+# Runs whenever sshd spawns a login shell for root
+
+# If we're already in zsh (resh already running), do nothing
+[ -n "$REXSHELL_ACTIVE" ] && return
+
+export REXSHELL_ACTIVE=1
+
+# Find resh
+for _resh in \
+    /data/adb/modules/rexshell/files/bin/resh \
+    /data/local/tmp/resh \
+    /data/adb/ssh/root/bin/resh; do
+  [ -x "$_resh" ] && exec "$_resh"
+done
+
+echo "[rexshell] resh not found — is the module installed?"

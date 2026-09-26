@@ -1,0 +1,6 @@
+id=rexshell
+name=rexshell
+version=v0.1.0
+versionCode=1
+author=RexAckermann
+description=Sexy root/SSH shell — invoke with `resh`
