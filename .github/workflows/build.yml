@@ -86,4 +86,4 @@ jobs:
           name: "rexshell $(date +%Y-%m-%d)"
           files: "*.zip"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
