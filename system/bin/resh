@@ -1,2 +1,62 @@
 #!/system/bin/sh
-exec /data/adb/modules/rexshell/files/bin/resh "$@"
+# resh — Rex's Shell
+# Self-contained: uses bundled bins only, no Termux required
+
+MOD="/data/adb/modules/rexshell/files"
+
+export REXSHELL_ACTIVE=1
+export HOME="/data/adb/ssh/root"
+export PATH="$MOD/bin:/system/bin:/system/xbin"
+
+export LD_LIBRARY_PATH="$MOD/lib:/system/lib64:/vendor/lib64"
+
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_STATE_HOME="$HOME/.local/state"
+
+mkdir -p \
+  "$HOME/.config/zsh" \
+  "$HOME/.local/share" \
+  "$HOME/.cache/zsh" \
+  "$HOME/.local/state/zsh"
+
+# Zsh's function tree is hierarchical.  The bundled Termux Zsh
+# functions live under subdirectories such as:
+#   Completion/
+#   Misc/
+#   VCS_Info/
+#   Prompts/
+#
+# Put every function directory itself in FPATH so autoload can find:
+#   compinit
+#   add-zsh-hook
+#   is-at-least
+#   colors
+#   vcs_info
+#   zrecompile
+#
+# Do not depend on Termux's absolute prefix; this shell is self-contained.
+FPATH=""
+for _zsh_func_dir in "$MOD/share/zsh/functions"/*; do
+  [ -d "$_zsh_func_dir" ] || continue
+  FPATH="${FPATH:+$FPATH:}$_zsh_func_dir"
+done
+unset _zsh_func_dir
+
+export FPATH
+
+export ZDOTDIR="$MOD/config/zsh"
+export HISTFILE="$HOME/.local/state/zsh/history"
+export HISTSIZE=1000000
+export SAVEHIST=1000000
+
+ZSH="$MOD/bin/zsh"
+
+if [ ! -x "$ZSH" ]; then
+  printf '\033[1;31m[resh] bundled zsh not found at %s\033[0m\n' "$ZSH"
+  printf '[resh] run the GitHub Actions workflow to build bins\n'
+  exit 1
+fi
+
+exec "$ZSH" --login
