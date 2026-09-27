@@ -142,7 +142,7 @@ jobs:
         run: |
           sed -i "s/^version=.*/version=${{ steps.version.outputs.tag }}/" module.prop
           sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" module.prop
-          zip -r rexshell.zip META-INF module.prop customize.sh service.sh files system \
+          zip -r rexshell.zip META-INF module.prop customize.sh service.sh uninstall.sh files system \
             --exclude "*.git*" "*.github*" "*.zwc"
           echo "size=$(du -sh rexshell.zip | cut -f1)" >> "$GITHUB_OUTPUT"
           unzip -l rexshell.zip | awk '
