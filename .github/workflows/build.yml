@@ -61,7 +61,7 @@ jobs:
               local pkg; pkg=$(echo "$queue" | awk '{print $1}')
               queue=$(echo "$queue" | cut -d' ' -f2-)
               [ "$queue" = "$pkg" ] && queue=""
-              echo " $resolved " | grep -q " $pkg " && continue
+              echo " $resolved " | grep -q " $pkg " && continue || true
               resolved="$resolved $pkg"
               local deps
               deps=$(awk "
@@ -72,7 +72,7 @@ jobs:
                 | tr ',' '\n' | sed 's/|[^,]*//' | sed 's/ (.*//' \
                 | tr -d ' ' | grep -v '^$' || true)
               for dep in $deps; do
-                echo " $resolved $queue " | grep -q " $dep " || queue="$queue $dep"
+                echo " $resolved $queue " | grep -q " $dep " || queue="$queue $dep" || true
               done
             done
             echo "$resolved"
@@ -94,8 +94,12 @@ jobs:
               [ "${o%%=*}" = "$pkg" ] && bin="${o##*=}"
             done
             [ -d "$TMP/pkgs/$pkg" ] || { echo "  ⚠ skipping $pkg (not downloaded)"; continue; }
-            found=$(find "$TMP/pkgs/$pkg" -name "$bin" -type f \
-                    | xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' | head -1)
+            # xargs exits 123 when any sub-shell returns non-zero (grep -q on non-ELF files).
+            # With pipefail that aborts the script. Use find+while instead, no xargs.
+            found=""
+            while IFS= read -r f; do
+              file "$f" | grep -q ELF && found="$f" && break || true
+            done < <(find "$TMP/pkgs/$pkg" -name "$bin" -type f)
             [ -z "$found" ] && { echo "  ⚠ $bin not found in $pkg"; continue; }
             cp "$found" "$BIN/$bin" && chmod 755 "$BIN/$bin"
             echo "  ✓ $bin ($(du -sh "$BIN/$bin" | cut -f1))"
@@ -117,7 +121,7 @@ jobs:
             [ -d "$TMP/pkgs/$pkg" ] || continue
             find "$TMP/pkgs/$pkg" \( -name "*.so" -o -name "*.so.*" \) | while read -r so; do
               name="$(basename "$so")"
-              echo " $SKIP " | grep -q " $name " && continue
+              echo " $SKIP " | grep -q " $name " && continue || true
               [ -f "$LIB/$name" ] && continue
               cp "$so" "$LIB/$name"
             done
