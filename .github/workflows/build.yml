@@ -156,33 +156,11 @@ jobs:
             https://github.com/agkozak/zsh-z \
             "$OMZ/custom/plugins/z"
 
-          echo "→ building gitstatusd"
+          echo "✓ oh-my-zsh + plugins installed"
 
-          cd "$OMZ/custom/themes/powerlevel10k/gitstatus"
-
-          ./build -w -s
-
-          echo "→ verifying gitstatusd"
-
-          file usrbin/gitstatusd
-
-          readelf -l usrbin/gitstatusd | grep -E \
-            'Requesting program interpreter|INTERP' || true
-
-          ldd usrbin/gitstatusd || true
-
-          test -x usrbin/gitstatusd || {
-            echo "ERROR: gitstatusd was not built"
-            exit 1
-          }
-
-          echo "✓ gitstatusd:"
-          file usrbin/gitstatusd
-
-          echo "→ returning to repository root"
-          cd "$GITHUB_WORKSPACE"
-
-          find "$OMZ" -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+          # Do NOT build gitstatusd here.
+          # The Android build needs a native Android/NDK gitstatusd,
+          # not the x86_64 Linux binary produced by the GitHub runner.
 
       - name: Package
         id: package
