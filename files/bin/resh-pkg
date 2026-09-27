@@ -5,9 +5,10 @@
 
 MOD="/data/adb/modules/rexshell/files"
 RESH_HOME="/sdcard/resh"
-BIN="$RESH_HOME/bin"
-LIB="$RESH_HOME/lib"
-mkdir -p "$BIN" "$LIB"
+RESH_PKG="/data/adb/resh"
+BIN="$RESH_PKG/bin"
+LIB="$RESH_PKG/lib"
+mkdir -p "$BIN" "$LIB" "$RESH_HOME/config"
 TMP="$(mktemp -d)"
 REPO="https://packages.termux.dev/apt/termux-main"
 ARCH="aarch64"

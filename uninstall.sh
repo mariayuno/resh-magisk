@@ -21,3 +21,6 @@ if [ -f "$BACKUP" ]; then
 elif [ -f "$PROFILE" ] && grep -q "rexshell" "$PROFILE" 2>/dev/null; then
   rm -f "$PROFILE"
 fi
+
+# /data/adb/resh/ (user-installed packages) is intentionally NOT removed.
+# Reinstalling the module will pick it up automatically.

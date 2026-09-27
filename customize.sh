@@ -15,7 +15,8 @@ ui_print "  rexshell"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Persistent user dir — never wiped on update
-mkdir -p "$RESH_HOME/bin" "$RESH_HOME/lib" "$RESH_HOME/config"
+mkdir -p "$RESH_HOME/config"
+mkdir -p /data/adb/resh/bin /data/adb/resh/lib
 ui_print "  ✓ persistent dir: $RESH_HOME"
 
 # Extract all required module files.
