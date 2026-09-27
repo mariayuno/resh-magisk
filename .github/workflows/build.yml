@@ -20,7 +20,7 @@ jobs:
         id: version
         run: echo "tag=build-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch Termux aarch64 packages + bundle lib deps
+      - name: Fetch Termux packages + bundle libs
         run: |
           set -e
           REPO="https://packages.termux.dev/apt/termux-main"
@@ -28,7 +28,26 @@ jobs:
           TMP="$(mktemp -d)"
           BIN="files/bin"
           LIB="files/lib"
-          mkdir -p "$BIN" "$LIB"
+          mkdir -p "$BIN" "$LIB" "$TMP/pkgs"
+
+          # ════════════════════════════════════════════════════════════════
+          # ADD PACKAGES HERE — just the Termux package name, one per line
+          # The resolver pulls all transitive deps and bundles their .so files
+          # automatically, so the module works with no Termux installed.
+          # ════════════════════════════════════════════════════════════════
+          PKGS="
+            zsh
+            eza
+            bat
+            fzf
+            ripgrep
+            git
+            openssh
+          "
+          # Binary name override when it differs from the package name
+          # (pkg_name=binary_name)
+          BIN_OVERRIDES="ripgrep=rg openssh=ssh"
+          # ════════════════════════════════════════════════════════════════
 
           echo "→ fetching package index"
           curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.xz" | xz -d > "$TMP/Packages" \
@@ -36,51 +55,95 @@ jobs:
           || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages" > "$TMP/Packages"
           echo "  index: $(wc -l < "$TMP/Packages") lines"
 
-          # Download + extract one binary from a Termux deb
-          get_bin() {
-            local pkg="$1" bin="$2"
-            echo "→ $pkg"
+          # Download + extract a deb once (cached in $TMP/pkgs/)
+          fetch_pkg() {
+            local pkg="$1"
+            [ -d "$TMP/pkgs/$pkg" ] && return 0
             local fname
-            fname=$(awk "/^Package: $pkg$/{f=1} f&&/^Filename:/{print \$2;exit}" "$TMP/Packages")
-            [ -z "$fname" ] && { echo "  SKIP: not in index"; return; }
-            curl -sfL "$REPO/$fname" -o "$TMP/$pkg.deb"
-            dpkg-deb -x "$TMP/$pkg.deb" "$TMP/$pkg"
-            local found
-            found=$(find "$TMP/$pkg" -name "$bin" -type f | xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' | head -1)
-            [ -z "$found" ] && { echo "  SKIP: $bin not in deb"; return; }
-            cp "$found" "$BIN/$bin"
-            chmod 755 "$BIN/$bin"
-            echo "  ✓ $(ls -lh "$BIN/$bin" | awk '{print $5}')"
+            fname=$(awk "/^Package: ${pkg}$/{f=1} f&&/^Filename:/{print \$2;exit}" "$TMP/Packages")
+            if [ -z "$fname" ]; then
+              echo "  ⚠  $pkg — not in index, skipping"
+              return 1
+            fi
+            curl -sfL "$REPO/$fname" -o "$TMP/pkgs/$pkg.deb"
+            dpkg-deb -x "$TMP/pkgs/$pkg.deb" "$TMP/pkgs/$pkg"
           }
 
-          # Core shell tools only — no git/openssh (heavy Termux runtime deps)
-          get_bin zsh     zsh
-          get_bin eza     eza
-          get_bin bat     bat
-          get_bin fzf     fzf
-          get_bin ripgrep rg
+          # BFS transitive dependency resolver using the Packages index
+          resolve_deps() {
+            local queue="$1" resolved=""
+            while [ -n "$queue" ]; do
+              local pkg; pkg=$(echo "$queue" | awk '{print $1}')
+              queue=$(echo "$queue" | cut -d' ' -f2-)
+              [ "$queue" = "$pkg" ] && queue=""
+              echo " $resolved " | grep -q " $pkg " && continue
+              resolved="$resolved $pkg"
+              local deps
+              deps=$(awk "
+                /^Package: ${pkg}$/ { f=1 }
+                f && /^Depends:/    { gsub(/^Depends: /,\"\"); print; f=0 }
+                f && /^$/           { f=0 }
+              " "$TMP/Packages" \
+                | tr ',' '\n' \
+                | sed 's/|[^,]*//' \
+                | sed 's/ (.*//' \
+                | tr -d ' ' \
+                | grep -v '^$' || true)
+              for dep in $deps; do
+                echo " $resolved $queue " | grep -q " $dep " || queue="$queue $dep"
+              done
+            done
+            echo "$resolved"
+          }
 
-          # Android system libs we don't need to bundle (always present on-device)
-          SYSTEM_LIBS="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so libandroid.so libc++.so libgcc_s.so libgcc.so"
+          # Normalise PKGS to a flat space-separated list
+          PKGS=$(echo "$PKGS" | tr '\n' ' ' | tr -s ' ')
 
-          echo "→ bundling shared library deps"
-          for binpath in "$BIN"/*; do
-            bin="$(basename "$binpath")"
-            readelf -d "$binpath" 2>/dev/null \
-              | grep -oP '(?<=\[)[^\]]+\.so[^\]]*(?=\])' \
-              | while read -r lib; do
-                  echo "$SYSTEM_LIBS" | grep -qw "$lib" && continue
-                  [ -f "$LIB/$lib" ] && continue   # already bundled
-                  found=$(find "$TMP" -name "$lib" -path "*/usr/lib/*" | head -1)
-                  if [ -n "$found" ]; then
-                    cp "$found" "$LIB/$lib"
-                    echo "  ✓ $bin → $lib"
-                  else
-                    echo "  ⚠ $bin needs $lib (not found in extracted debs)"
-                  fi
-                done
+          echo "→ resolving transitive dependencies"
+          ALL=$(resolve_deps "$PKGS")
+          echo "  direct: $(echo $PKGS | wc -w)  total (with deps): $(echo $ALL | wc -w)"
+
+          echo "→ downloading all packages"
+          for pkg in $ALL; do
+            fetch_pkg "$pkg" && echo "  ✓ $pkg" || true
           done
-          echo "  libs bundled: $(ls "$LIB" | wc -l)"
+
+          echo "→ extracting binaries"
+          for pkg in $PKGS; do
+            # Resolve binary name override
+            bin="$pkg"
+            for o in $BIN_OVERRIDES; do
+              [ "${o%%=*}" = "$pkg" ] && bin="${o##*=}"
+            done
+            [ -d "$TMP/pkgs/$pkg" ] || continue
+            found=$(find "$TMP/pkgs/$pkg" -name "$bin" -type f \
+                    | xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' \
+                    | head -1)
+            if [ -z "$found" ]; then
+              echo "  ⚠  $bin not found in $pkg"
+              continue
+            fi
+            cp "$found" "$BIN/$bin"
+            chmod 755 "$BIN/$bin"
+            echo "  ✓ $bin  $(ls -lh "$BIN/$bin" | awk '{print $5}')"
+          done
+
+          # Android Bionic libs always present on-device — don't bundle these
+          SKIP_LIBS="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so
+                     libandroid.so libc++.so libgcc_s.so libgcc.so"
+
+          echo "→ bundling shared libraries from all resolved packages"
+          for pkg in $ALL; do
+            [ -d "$TMP/pkgs/$pkg" ] || continue
+            find "$TMP/pkgs/$pkg" \( -name "*.so" -o -name "*.so.*" \) | while read -r so; do
+              name="$(basename "$so")"
+              echo " $SKIP_LIBS " | tr -s ' ' | grep -q " $name " && continue
+              [ -f "$LIB/$name" ] && continue
+              cp "$so" "$LIB/$name"
+              echo "  ✓ $name  (from $pkg)"
+            done
+          done
+          echo "  total libs bundled: $(ls "$LIB" | wc -l)"
 
       - name: Clone oh-my-zsh + plugins
         run: |
@@ -101,8 +164,13 @@ jobs:
             META-INF module.prop customize.sh service.sh files system \
             --exclude "*.git*" "*.github*"
           ls -lh *.zip
-          echo "--- contents ---"
-          unzip -l "rexshell-$(date +%Y%m%d).zip" | tail -20
+          echo "--- zip contents (summary) ---"
+          unzip -l "rexshell-$(date +%Y%m%d).zip" | awk '
+            /files\/bin\//  { bins++ }
+            /files\/lib\//  { libs++ }
+            /files\/oh-my-zsh\// { omz++ }
+            END { printf "  bins: %d  libs: %d  omz files: %d\n", bins, libs, omz }
+          '
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
