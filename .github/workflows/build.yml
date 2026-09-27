@@ -20,14 +20,15 @@ jobs:
         id: version
         run: echo "tag=build-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch Termux aarch64 packages
+      - name: Fetch Termux aarch64 packages + bundle lib deps
         run: |
           set -e
           REPO="https://packages.termux.dev/apt/termux-main"
           ARCH="aarch64"
           TMP="$(mktemp -d)"
           BIN="files/bin"
-          mkdir -p "$BIN"
+          LIB="files/lib"
+          mkdir -p "$BIN" "$LIB"
 
           echo "→ fetching package index"
           curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.xz" | xz -d > "$TMP/Packages" \
@@ -35,6 +36,7 @@ jobs:
           || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages" > "$TMP/Packages"
           echo "  index: $(wc -l < "$TMP/Packages") lines"
 
+          # Download + extract one binary from a Termux deb
           get_bin() {
             local pkg="$1" bin="$2"
             echo "→ $pkg"
@@ -51,13 +53,34 @@ jobs:
             echo "  ✓ $(ls -lh "$BIN/$bin" | awk '{print $5}')"
           }
 
+          # Core shell tools only — no git/openssh (heavy Termux runtime deps)
           get_bin zsh     zsh
           get_bin eza     eza
           get_bin bat     bat
           get_bin fzf     fzf
           get_bin ripgrep rg
-          get_bin git     git
-          get_bin openssh ssh
+
+          # Android system libs we don't need to bundle (always present on-device)
+          SYSTEM_LIBS="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so libandroid.so libc++.so libgcc_s.so libgcc.so"
+
+          echo "→ bundling shared library deps"
+          for binpath in "$BIN"/*; do
+            bin="$(basename "$binpath")"
+            readelf -d "$binpath" 2>/dev/null \
+              | grep -oP '(?<=\[)[^\]]+\.so[^\]]*(?=\])' \
+              | while read -r lib; do
+                  echo "$SYSTEM_LIBS" | grep -qw "$lib" && continue
+                  [ -f "$LIB/$lib" ] && continue   # already bundled
+                  found=$(find "$TMP" -name "$lib" -path "*/usr/lib/*" | head -1)
+                  if [ -n "$found" ]; then
+                    cp "$found" "$LIB/$lib"
+                    echo "  ✓ $bin → $lib"
+                  else
+                    echo "  ⚠ $bin needs $lib (not found in extracted debs)"
+                  fi
+                done
+          done
+          echo "  libs bundled: $(ls "$LIB" | wc -l)"
 
       - name: Clone oh-my-zsh + plugins
         run: |
@@ -74,8 +97,12 @@ jobs:
           VERSION="${{ steps.version.outputs.tag }}"
           sed -i "s/^version=.*/version=$VERSION/" module.prop
           sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" module.prop
-          zip -r "rexshell-$(date +%Y%m%d).zip" META-INF module.prop files customize.sh service.sh --exclude "*.git*" "*.github*"
+          zip -r "rexshell-$(date +%Y%m%d).zip" \
+            META-INF module.prop customize.sh service.sh files system \
+            --exclude "*.git*" "*.github*"
           ls -lh *.zip
+          echo "--- contents ---"
+          unzip -l "rexshell-$(date +%Y%m%d).zip" | tail -20
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

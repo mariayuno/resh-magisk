@@ -8,6 +8,8 @@ export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
 export PATH="$MOD/bin:/system/bin:/system/xbin"
 
+export LD_LIBRARY_PATH="$MOD/lib:/system/lib64:/vendor/lib64"
+
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
