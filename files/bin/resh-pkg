@@ -74,10 +74,7 @@ cmd_install() {
   done
 
   echo "→ extracting binary '$bin' from '$pkg'..."
-  local found=""
-  while IFS= read -r f; do
-    file "$f" | grep -q ELF && found="$f" && break || true
-  done < <(find "$TMP/pkgs/$pkg" -name "$bin" -type f 2>/dev/null)
+  found=$(find "$TMP/pkgs/$pkg" -name "$bin" -type f 2>/dev/null     | xargs -I{} sh -c 'file "$1" | grep -q ELF && echo "$1"' -- {}     | head -1)
 
   if [ -z "$found" ]; then
     # list what binaries ARE available to help the user

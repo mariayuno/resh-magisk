@@ -40,7 +40,7 @@ autoload -Uz vcs_info || {
 
 zstyle ':completion:*' menu select
 bindkey '\t' menu-complete
-bindkey "$terminfo[kcbt]" reverse-menu-complete
+[[ -n "$terminfo[kcbt]" ]] && bindkey "$terminfo[kcbt]" reverse-menu-complete
 
 # history
 setopt EXTENDED_HISTORY HIST_IGNORE_DUPS SHARE_HISTORY
