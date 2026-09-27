@@ -21,8 +21,8 @@ jobs:
         run: echo "tag=build-$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch Termux packages + bundle libs
-        continue-on-error: false
         run: |
+          set -euo pipefail
           REPO="https://packages.termux.dev/apt/termux-main"
           ARCH="aarch64"
           TMP="$(mktemp -d)"
@@ -31,45 +31,30 @@ jobs:
           mkdir -p "$BIN" "$LIB" "$TMP/pkgs"
 
           # ════════════════════════════════════════════════════════════════
-          # ADD PACKAGES HERE — just the Termux package name, one per line
-          # The resolver pulls all transitive deps and bundles their .so files
-          # automatically, so the module works with no Termux installed.
+          # ADD PACKAGES HERE — just the Termux package name, one per line.
+          # Transitive deps and their .so files are resolved automatically.
           # ════════════════════════════════════════════════════════════════
-          PKGS="
-            zsh
-            eza
-            bat
-            fzf
-            ripgrep
-            git
-            openssh
-          "
-          # Binary name override when it differs from the package name
-          # (pkg_name=binary_name)
+          PKGS="zsh eza bat fzf ripgrep git openssh"
+
+          # Binary name when it differs from the package name
           BIN_OVERRIDES="ripgrep=rg openssh=ssh"
           # ════════════════════════════════════════════════════════════════
 
           echo "→ fetching package index"
           curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.xz" | xz -d > "$TMP/Packages" \
-          || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.gz" | gunzip > "$TMP/Packages" \
-          || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages" > "$TMP/Packages"
-          echo "  index: $(wc -l < "$TMP/Packages") lines"
+          || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.gz" | gunzip > "$TMP/Packages"
+          echo "  $(wc -l < "$TMP/Packages") lines"
 
-          # Download + extract a deb once (cached in $TMP/pkgs/)
           fetch_pkg() {
             local pkg="$1"
             [ -d "$TMP/pkgs/$pkg" ] && return 0
             local fname
             fname=$(awk "/^Package: ${pkg}$/{f=1} f&&/^Filename:/{print \$2;exit}" "$TMP/Packages")
-            if [ -z "$fname" ]; then
-              echo "  ⚠  $pkg — not in index, skipping"
-              return 1
-            fi
+            [ -z "$fname" ] && { echo "  ⚠ $pkg not in index"; return 1; }
             curl -sfL "$REPO/$fname" -o "$TMP/pkgs/$pkg.deb"
             dpkg-deb -x "$TMP/pkgs/$pkg.deb" "$TMP/pkgs/$pkg"
           }
 
-          # BFS transitive dependency resolver using the Packages index
           resolve_deps() {
             local queue="$1" resolved=""
             while [ -n "$queue" ]; do
@@ -84,11 +69,8 @@ jobs:
                 f && /^Depends:/    { gsub(/^Depends: /,\"\"); print; f=0 }
                 f && /^$/           { f=0 }
               " "$TMP/Packages" \
-                | tr ',' '\n' \
-                | sed 's/|[^,]*//' \
-                | sed 's/ (.*//' \
-                | tr -d ' ' \
-                | grep -v '^$' || true)
+                | tr ',' '\n' | sed 's/|[^,]*//' | sed 's/ (.*//' \
+                | tr -d ' ' | grep -v '^$' || true)
               for dep in $deps; do
                 echo " $resolved $queue " | grep -q " $dep " || queue="$queue $dep"
               done
@@ -96,54 +78,43 @@ jobs:
             echo "$resolved"
           }
 
-          # Normalise PKGS to a flat space-separated list
-          PKGS=$(echo "$PKGS" | tr '\n' ' ' | tr -s ' ')
-
-          echo "→ resolving transitive dependencies"
+          echo "→ resolving deps"
           ALL=$(resolve_deps "$PKGS")
-          echo "  direct: $(echo $PKGS | wc -w)  total (with deps): $(echo $ALL | wc -w)"
+          echo "  direct=$(echo $PKGS | wc -w) total=$(echo $ALL | wc -w)"
 
-          echo "→ downloading all packages"
+          echo "→ downloading"
           for pkg in $ALL; do
             fetch_pkg "$pkg" && echo "  ✓ $pkg" || true
           done
 
           echo "→ extracting binaries"
           for pkg in $PKGS; do
-            # Resolve binary name override
             bin="$pkg"
             for o in $BIN_OVERRIDES; do
               [ "${o%%=*}" = "$pkg" ] && bin="${o##*=}"
             done
-            [ -d "$TMP/pkgs/$pkg" ] || continue
+            [ -d "$TMP/pkgs/$pkg" ] || { echo "  ⚠ skipping $pkg (not downloaded)"; continue; }
             found=$(find "$TMP/pkgs/$pkg" -name "$bin" -type f \
-                    | xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' \
-                    | head -1)
-            if [ -z "$found" ]; then
-              echo "  ⚠  $bin not found in $pkg"
-              continue
-            fi
-            cp "$found" "$BIN/$bin"
-            chmod 755 "$BIN/$bin"
-            echo "  ✓ $bin  $(ls -lh "$BIN/$bin" | awk '{print $5}')"
+                    | xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' | head -1)
+            [ -z "$found" ] && { echo "  ⚠ $bin not found in $pkg"; continue; }
+            cp "$found" "$BIN/$bin" && chmod 755 "$BIN/$bin"
+            echo "  ✓ $bin ($(du -sh "$BIN/$bin" | cut -f1))"
           done
 
-          # Android Bionic libs always present on-device — don't bundle these
-          SKIP_LIBS="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so
-                     libandroid.so libc++.so libgcc_s.so libgcc.so"
-
-          echo "→ bundling shared libraries from all resolved packages"
+          echo "→ bundling .so deps"
+          SKIP="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so libandroid.so libc++.so libgcc_s.so libgcc.so"
           for pkg in $ALL; do
             [ -d "$TMP/pkgs/$pkg" ] || continue
             find "$TMP/pkgs/$pkg" \( -name "*.so" -o -name "*.so.*" \) | while read -r so; do
               name="$(basename "$so")"
-              echo " $SKIP_LIBS " | tr -s ' ' | grep -q " $name " && continue
+              echo " $SKIP " | grep -q " $name " && continue
               [ -f "$LIB/$name" ] && continue
               cp "$so" "$LIB/$name"
-              echo "  ✓ $name  (from $pkg)"
             done
           done
-          echo "  total libs bundled: $(ls "$LIB" | wc -l)"
+          echo "  $(ls "$LIB" | wc -l) libs bundled"
+
+          echo "→ bins: $(ls "$BIN")"
 
       - name: Clone oh-my-zsh + plugins
         continue-on-error: true
@@ -157,48 +128,33 @@ jobs:
           find "$OMZ" -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
       - name: Package
+        id: package
         run: |
-          VERSION="${{ steps.version.outputs.tag }}"
-          sed -i "s/^version=.*/version=$VERSION/" module.prop
+          sed -i "s/^version=.*/version=${{ steps.version.outputs.tag }}/" module.prop
           sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" module.prop
-          zip -r "rexshell.zip" \
-            META-INF module.prop customize.sh service.sh files system \
+          zip -r rexshell.zip META-INF module.prop customize.sh service.sh files system \
             --exclude "*.git*" "*.github*"
-          ls -lh *.zip
-          echo "--- zip contents (summary) ---"
-          unzip -l "rexshell.zip" | awk '
-            /files\/bin\//  { bins++ }
-            /files\/lib\//  { libs++ }
-            /files\/oh-my-zsh\// { omz++ }
-            END { printf "  bins: %d  libs: %d  omz files: %d\n", bins, libs, omz }
+          echo "size=$(du -sh rexshell.zip | cut -f1)" >> "$GITHUB_OUTPUT"
+          unzip -l rexshell.zip | awk '
+            /files\/bin\//     { bins++ }
+            /files\/lib\//     { libs++ }
+            /files\/oh-my-zsh/ { omz++ }
+            END { printf "bins=%d libs=%d omz=%d\n", bins, libs, omz }
           '
 
-      # GitHub Actions wraps artifact downloads in an outer zip — NOT directly flashable.
-      # Flash from the Release section below instead.
-      - name: Upload artifact (inspection only)
-        uses: actions/upload-artifact@v4
-        with:
-          name: rexshell
-          path: "*.zip"
-
       - name: Release
-        if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: rexshell ${{ steps.version.outputs.tag }}
+          name: rexshell ${{ steps.version.outputs.tag }} (${{ steps.package.outputs.size }})
           prerelease: true
           make_latest: true
           body: |
             Commit: ${{ github.sha }}
-            Triggered by: ${{ github.event_name }}
 
-            Flash **rexshell-*.zip** (asset below) with KSU or Magisk.
-            Do NOT use the Artifacts zip from the Actions tab — it is double-wrapped.
-
-            One-liner install:
+            **One-liner install (from root shell):**
             ```
-            curl -sL $(curl -s https://api.github.com/repos/mariayuno/resh-magisk/releases/latest | grep -o '"browser_download_url":"[^"]*\.zip"' | cut -d\" -f4) -o /tmp/rexshell.zip && /data/adb/ksud module install /tmp/rexshell.zip
+            curl -Lo /tmp/rexshell.zip https://github.com/mariayuno/resh-magisk/releases/latest/download/rexshell.zip && /data/adb/ksud module install /tmp/rexshell.zip
             ```
-          files: "*.zip"
+          files: rexshell.zip
           token: ${{ secrets.GITHUB_TOKEN }}
