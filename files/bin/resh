@@ -36,6 +36,7 @@ export ZDOTDIR="$MOD/config/zsh"
 export HISTFILE="$HOME/.local/state/zsh/history"
 export HISTSIZE=1000000
 export SAVEHIST=1000000
+export TERM=kitty
 
 ZSH="$MOD/bin/zsh"
 
