@@ -161,7 +161,6 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: rexshell ${{ steps.version.outputs.tag }} (${{ steps.package.outputs.size }})
-          prerelease: true
           make_latest: true
           body: |
             Commit: ${{ github.sha }}
