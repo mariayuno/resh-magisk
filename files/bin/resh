@@ -3,22 +3,25 @@
 # Canonical runtime launcher
 
 MOD="/data/adb/modules/rexshell/files"
-RESH_HOME="/sdcard/resh"
-RESH_PKG="/data/adb/resh"
-# dpkg installs Termux debs here (their internal paths are data/data/com.termux/files/usr/...)
+RESH_HOME="/sdcard/resh"         # user-visible: config, history (FUSE, no exec)
+RESH_BIN="/data/media/0/resh/bin" # same files as /sdcard/resh/bin but via real ext4 path
+RESH_PKG="/data/adb/resh"         # dpkg-installed packages + database
 TPFX="$RESH_PKG/data/data/com.termux/files/usr"
 
 export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
 
 mkdir -p \
-  "$RESH_HOME/config" "$RESH_HOME/bin" \
+  "$RESH_HOME/config" "$RESH_BIN" \
   "$RESH_PKG/bin" "$RESH_PKG/lib" \
   "$TPFX/bin" "$TPFX/lib" \
   "$RESH_PKG/var/lib/apt/lists"
 
-# Priority: user scripts > dpkg-installed > resh-pkg legacy > module > system
-export PATH="$RESH_HOME/bin:$TPFX/bin:$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"
+# Ensure scripts saved by file manager (which strips exec bit via FUSE) are executable
+chmod +x "$RESH_BIN/"* 2>/dev/null || true
+
+# Priority: user scripts > dpkg-installed > resh-pkg bins > module > system
+export PATH="$RESH_BIN:$TPFX/bin:$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"
 export LD_LIBRARY_PATH="$TPFX/lib:$RESH_PKG/lib:$MOD/lib:/system/lib64:/vendor/lib64"
 
 export XDG_DATA_HOME="$HOME/.local/share"
