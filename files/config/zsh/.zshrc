@@ -11,51 +11,45 @@ OMZ="$MOD/oh-my-zsh"
 setopt EXTENDED_HISTORY HIST_IGNORE_DUPS SHARE_HISTORY
 mkdir -p "$(dirname "$HISTFILE")"
 
-# ── completion (lazy) ─────────────────────────────────────────────────────────
-# compinit is expensive — defer it until the first tab press
+# ── completion + plugins that need compdef (lazy, on first tab) ───────────────
 _resh_compinit_done=0
 _resh_compinit() {
   (( _resh_compinit_done )) && return
   _resh_compinit_done=1
+
   autoload -Uz compinit && compinit -d "$XDG_CACHE_HOME/zcompdump"
   zstyle ':completion:*' menu select
   bindkey '\t' menu-complete
   [[ -n "$terminfo[kcbt]" ]] && bindkey "$terminfo[kcbt]" reverse-menu-complete
-  # re-bind tab to normal completion now that compinit is done
-  bindkey '\t' menu-complete
+
+  # git plugin calls compdef — must load after compinit
+  local f="$OMZ/plugins/git/git.plugin.zsh"
+  [[ -f "$f" ]] && source "$f"
 }
 zle -N _resh_compinit
 bindkey '\t' _resh_compinit
 
-# ── plugins (lazy) ────────────────────────────────────────────────────────────
-# Load on first interactive command via precmd, then unhook itself
+# ── plugins that don't need compdef (lazy, on first precmd) ──────────────────
 _resh_plugins_done=0
 _resh_load_plugins() {
   (( _resh_plugins_done )) && return
   _resh_plugins_done=1
 
-  # zsh-autosuggestions
-  local f="$OMZ/custom/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
+  local f
+  f="$OMZ/custom/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
   [[ -f "$f" ]] && source "$f"
   ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 
-  # zsh-syntax-highlighting — must be last
-  f="$OMZ/custom/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
-  [[ -f "$f" ]] && source "$f"
-
-  # z (zsh-z directory jumper)
   f="$OMZ/custom/plugins/z/zsh-z.plugin.zsh"
   [[ -f "$f" ]] && source "$f"
 
-  # OMZ git plugin (aliases only, no prompt overhead)
-  f="$OMZ/plugins/git/git.plugin.zsh"
-  [[ -f "$f" ]] && source "$f"
-
-  # OMZ sudo plugin (ESC ESC to prefix sudo)
   f="$OMZ/plugins/sudo/sudo.plugin.zsh"
   [[ -f "$f" ]] && source "$f"
 
-  # unhook — only run once
+  # syntax-highlighting must be last
+  f="$OMZ/custom/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+  [[ -f "$f" ]] && source "$f"
+
   add-zsh-hook -d precmd _resh_load_plugins
 }
 autoload -Uz add-zsh-hook
@@ -103,13 +97,13 @@ incognito() {
   if [[ $1 == off || $1 == -d ]]; then
     fc -P; unset incognito; echo "Incognito OFF"
   else
-    cp "$HISTFILE" /tmp/.zsh_history.tmp
-    fc -p /tmp/.zsh_history.tmp
+    cp "$HISTFILE" "$TMPDIR/.zsh_history_incognito"
+    fc -p "$TMPDIR/.zsh_history_incognito"
     export incognito=1; echo "Incognito ON"
   fi
 }
 
-# ── p10k config ───────────────────────────────────────────────────────────────
+# ── p10k ──────────────────────────────────────────────────────────────────────
 [[ -f "$ZDOTDIR/.p10k.zsh" ]] && source "$ZDOTDIR/.p10k.zsh"
 
 # ── user config ───────────────────────────────────────────────────────────────

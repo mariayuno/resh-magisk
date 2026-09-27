@@ -7,12 +7,11 @@ TPFX="$RESH/usr"
 
 export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
+export TMPDIR="$RESH/tmp"
 
 mkdir -p \
-  "$RESH/bin" \
-  "$RESH/tmp" \
+  "$RESH/bin" "$RESH/tmp" "$RESH/config" \
   "$TPFX/bin" "$TPFX/lib" \
-  "$RESH/var/lib/apt/lists" \
   "$HOME/.config/zsh" \
   "$HOME/.local/share" \
   "$HOME/.cache/zsh" \
@@ -36,20 +35,15 @@ export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-FPATH=""
-while IFS= read -r dir; do
-  [ -d "$dir" ] || continue
-  FPATH="${FPATH:+$FPATH:}$dir"
-done << FEOF
-$(find "$MOD/share/zsh/functions" -type d 2>/dev/null | sort)
-FEOF
-export FPATH
+# FPATH: static colon-separated list built at launch
+# find is still needed since the functions tree is deep, but it's one find
+# on the module dir (read-only, likely cached) not user data
+export FPATH="$(find "$MOD/share/zsh/functions" -type d 2>/dev/null | sort | tr '\n' ':' | sed 's/:$//')"
 
 export ZDOTDIR="$MOD/config/zsh"
 export HISTFILE="$RESH/history"
 export HISTSIZE=1000000
 export SAVEHIST=1000000
-export TMPDIR="$RESH/tmp"
 
 ZSH="$MOD/bin/zsh"
 [ -x "$ZSH" ] || { echo "ERROR: bundled zsh not found: $ZSH"; exit 1; }

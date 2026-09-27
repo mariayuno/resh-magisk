@@ -58,12 +58,15 @@ init_prefix() {
 
 write_apt_config() {
   local conf="$TPFX/etc/apt/apt.conf"
-  grep -q "rexshell" "$conf" 2>/dev/null && return 0
+  # Regenerate if missing or if module path changed
+  if grep -q "rexshell" "$conf" 2>/dev/null && grep -q "$MOD" "$conf" 2>/dev/null; then
+    return 0
+  fi
   cat > "$conf" << APTCONF
-// rexshell APT config — auto-generated
+// rexshell APT config — auto-generated, do not edit
 Dir "$RESH/";
 Dir::State "usr/var/lib/apt/";
-Dir::State::status "../../dpkg/status";
+Dir::State::status "usr/var/lib/dpkg/status";
 Dir::Cache "usr/var/cache/apt/";
 Dir::Etc "usr/etc/apt/";
 Dir::Log "usr/var/log/apt/";
