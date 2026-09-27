@@ -1,36 +1,39 @@
 #!/sbin/sh
-SKIPUNZIP=1
-MODDIR="/data/adb/modules/rexshell"
+#################
+# Initialization
+#################
+
+umask 022
 
 ui_print() { echo "$1"; }
-ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-ui_print "  rexshell"
-ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-mkdir -p "$MODDIR"
-unzip -o "$ZIPFILE" 'files/*' -d "$MODDIR" >&2
+require_new_magisk() {
+  ui_print "*********************************"
+  ui_print " Please install Magisk v20.4+!   "
+  ui_print "*********************************"
+  exit 1
+}
 
-# Mark bins executable
-chmod 755 "$MODDIR/files/bin/"*
+#########################
+# Load util_functions.sh
+#########################
 
-# Hook SSH: write .profile into root home so login shell auto-execs resh
-SSH_HOME="/data/adb/ssh/root"
-mkdir -p "$SSH_HOME"
+OUTFD=$2
+ZIPFILE=$3
 
-# Backup existing .profile if not ours
-if [ -f "$SSH_HOME/.profile" ] && ! grep -q "rexshell" "$SSH_HOME/.profile" 2>/dev/null; then
-  cp "$SSH_HOME/.profile" "$SSH_HOME/.profile.bak"
-fi
+mount /data 2>/dev/null
 
-cat > "$SSH_HOME/.profile" << 'PROFILE'
-#!/bin/sh
-# rexshell ssh hook
-[ -n "$REXSHELL_ACTIVE" ] && return 0
-export REXSHELL_ACTIVE=1
-exec /data/adb/modules/rexshell/files/bin/resh
-PROFILE
-chmod 644 "$SSH_HOME/.profile"
+[ -f /data/adb/magisk/util_functions.sh ] || require_new_magisk
+. /data/adb/magisk/util_functions.sh
+[ "$MAGISK_VER_CODE" -lt 20400 ] && require_new_magisk
 
-ui_print "  ✓ SSH hook: /data/adb/ssh/root/.profile"
-ui_print "  ✓ Invoke manually: resh"
-ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+###################
+# Standard install
+###################
+
+# install_module extracts the zip into $MODPATH, copies module.prop,
+# sources customize.sh, sets perms/contexts, and registers the module
+# with Magisk — this replaces all of that logic that used to be
+# hand-rolled (and broken) here.
+install_module
+exit 0
