@@ -115,3 +115,7 @@ incognito() {
 
 # p10k config
 [[ -f "$ZDOTDIR/.p10k.zsh" ]] && source "$ZDOTDIR/.p10k.zsh"
+
+# User config — edit /sdcard/resh/config/user.zsh to customise
+# This file persists across module updates and reflashes
+[[ -f "/sdcard/resh/config/user.zsh" ]] && source "/sdcard/resh/config/user.zsh"

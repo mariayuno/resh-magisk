@@ -8,9 +8,15 @@ if [ -z "$MODPATH" ]; then
 fi
 MOD="$MODPATH"
 
+RESH_HOME="/sdcard/resh"
+
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ui_print "  rexshell"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Persistent user dir — never wiped on update
+mkdir -p "$RESH_HOME/bin" "$RESH_HOME/lib" "$RESH_HOME/config"
+ui_print "  ✓ persistent dir: $RESH_HOME"
 
 # Extract all required module files.
 # SKIPUNZIP=1 means Magisk/KSU won't touch the zip — we own everything.
@@ -46,3 +52,19 @@ fi
 
 ui_print "  ✓ SSH auto-launch via .profile"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Seed user config stub if it doesn't exist yet
+USER_ZSH="$RESH_HOME/config/user.zsh"
+if [ ! -f "$USER_ZSH" ]; then
+  cat > "$USER_ZSH" << 'STUB'
+# /sdcard/resh/config/user.zsh
+# Your personal config — persists across resh updates and reflashes.
+# Sourced after all module config, so you can override anything.
+#
+# Examples:
+#   alias ll='eza -la'
+#   export EDITOR=nvim
+#   resh-pkg install neovim nvim   # install extra packages
+STUB
+  ui_print "  ✓ user config stub: $USER_ZSH"
+fi

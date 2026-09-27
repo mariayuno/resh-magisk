@@ -3,12 +3,17 @@
 # Canonical runtime launcher
 
 MOD="/data/adb/modules/rexshell/files"
+RESH_HOME="/sdcard/resh"
 
 export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
 
-export PATH="$MOD/bin:/system/bin:/system/xbin"
-export LD_LIBRARY_PATH="$MOD/lib:/system/lib64:/vendor/lib64"
+# Persistent user dir — survives module updates and reflashes
+mkdir -p "$RESH_HOME/bin" "$RESH_HOME/lib" "$RESH_HOME/config"
+
+# User bins/libs take precedence over module bundled ones
+export PATH="$RESH_HOME/bin:$MOD/bin:/system/bin:/system/xbin"
+export LD_LIBRARY_PATH="$RESH_HOME/lib:$MOD/lib:/system/lib64:/vendor/lib64"
 
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -44,7 +49,7 @@ EOF
 export FPATH
 
 export ZDOTDIR="$MOD/config/zsh"
-export HISTFILE="$HOME/.local/state/zsh/history"
+export HISTFILE="$RESH_HOME/history"
 export HISTSIZE=1000000
 export SAVEHIST=1000000
 

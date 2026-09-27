@@ -4,8 +4,10 @@
 #        resh-pkg list
 
 MOD="/data/adb/modules/rexshell/files"
-BIN="$MOD/bin"
-LIB="$MOD/lib"
+RESH_HOME="/sdcard/resh"
+BIN="$RESH_HOME/bin"
+LIB="$RESH_HOME/lib"
+mkdir -p "$BIN" "$LIB"
 TMP="$(mktemp -d)"
 REPO="https://packages.termux.dev/apt/termux-main"
 ARCH="aarch64"
@@ -101,7 +103,7 @@ cmd_install() {
   done
 
   rm -rf "$TMP"
-  echo "done. Restart resh or run: export PATH=\"$BIN:\$PATH\""
+  echo "done — $bin available immediately in new resh sessions"
 }
 
 cmd_list() {
