@@ -172,7 +172,9 @@ jobs:
             END { printf "  bins: %d  libs: %d  omz files: %d\n", bins, libs, omz }
           '
 
-      - name: Upload artifact
+      # GitHub Actions wraps artifact downloads in an outer zip — NOT directly flashable.
+      # Flash from the Release section below instead.
+      - name: Upload artifact (inspection only)
         uses: actions/upload-artifact@v4
         with:
           name: rexshell
@@ -183,5 +185,6 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: rexshell ${{ steps.version.outputs.tag }}
+          body: "Download the .zip asset below and flash with KSU/Magisk. Do NOT use the Artifacts zip from the Actions tab — it is double-wrapped and will fail to install."
           files: "*.zip"
           token: ${{ secrets.GITHUB_TOKEN }}
