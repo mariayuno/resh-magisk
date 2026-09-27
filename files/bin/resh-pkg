@@ -74,12 +74,12 @@ cmd_install() {
   done
 
   echo "→ extracting binary '$bin' from '$pkg'..."
-  found=$(find "$TMP/pkgs/$pkg" -name "$bin" -type f 2>/dev/null     | xargs -I{} sh -c 'file "$1" | grep -q ELF && echo "$1"' -- {}     | head -1)
+  found=$(find "$TMP/pkgs/$pkg" -name "$bin" -type f 2>/dev/null | while read -r f; do file "$f" 2>/dev/null | grep -q ELF && echo "$f" && break; done | head -1)
 
   if [ -z "$found" ]; then
     # list what binaries ARE available to help the user
     echo "  ⚠ binary '$bin' not found. Available ELF files in $pkg:"
-    find "$TMP/pkgs/$pkg" -type f | xargs -I{} sh -c 'file {} | grep -q ELF && echo "    {}"' 2>/dev/null || true
+    find "$TMP/pkgs/$pkg" -type f 2>/dev/null | while read -r f; do file "$f" 2>/dev/null | grep -q ELF && echo "    $f"; done || true
     rm -rf "$TMP"
     exit 1
   fi
