@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # resh — Rex's Shell
-# Self-contained: uses bundled bins only, no Termux required
+# Self-contained: bundled tools only
 
 MOD="/data/adb/modules/rexshell/files"
 
@@ -21,14 +21,24 @@ mkdir -p \
   "$HOME/.cache/zsh" \
   "$HOME/.local/state/zsh"
 
-# Zsh functions are stored inside category subdirectories
-# such as Completion/, Misc/, and VCS_Info/.
+# Include every directory in the bundled Zsh function tree.
+# Required for:
+#   Completion/Base/_call_program
+#   VCS_Info/Backends/VCS_INFO_detect_git
+#   Misc/add-zsh-hook
 FPATH=""
 
-for _zsh_func_dir in "$MOD/share/zsh/functions"/*; do
-    [ -d "$_zsh_func_dir" ] || continue
-    FPATH="${FPATH:+$FPATH:}$_zsh_func_dir"
-done
+while IFS= read -r dir; do
+    [ -d "$dir" ] || continue
+
+    if [ -z "$FPATH" ]; then
+        FPATH="$dir"
+    else
+        FPATH="$FPATH:$dir"
+    fi
+done <<EOF
+$(find "$MOD/share/zsh/functions" -type d 2>/dev/null | sort)
+EOF
 
 export FPATH
 
@@ -36,7 +46,6 @@ export ZDOTDIR="$MOD/config/zsh"
 export HISTFILE="$HOME/.local/state/zsh/history"
 export HISTSIZE=1000000
 export SAVEHIST=1000000
-export TERM=kitty
 
 ZSH="$MOD/bin/zsh"
 
