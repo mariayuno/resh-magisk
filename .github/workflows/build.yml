@@ -18,7 +18,7 @@ jobs:
 
       - name: Set version
         id: version
-        run: echo "tag=build-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=build-$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch Termux packages + bundle libs
         run: |
@@ -185,6 +185,18 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: rexshell ${{ steps.version.outputs.tag }}
-          body: "Download the .zip asset below and flash with KSU/Magisk. Do NOT use the Artifacts zip from the Actions tab — it is double-wrapped and will fail to install."
+          prerelease: true
+          make_latest: true
+          body: |
+            Commit: ${{ github.sha }}
+            Triggered by: ${{ github.event_name }}
+
+            Flash **rexshell-*.zip** (asset below) with KSU or Magisk.
+            Do NOT use the Artifacts zip from the Actions tab — it is double-wrapped.
+
+            One-liner install:
+            ```
+            curl -sL $(curl -s https://api.github.com/repos/mariayuno/resh-magisk/releases/latest | grep -o '"browser_download_url":"[^"]*\.zip"' | cut -d\" -f4) -o /tmp/rexshell.zip && /data/adb/ksud module install /tmp/rexshell.zip
+            ```
           files: "*.zip"
           token: ${{ secrets.GITHUB_TOKEN }}
