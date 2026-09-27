@@ -5,13 +5,13 @@ REPO:       https://github.com/mariayuno/resh-magisk
 WHAT:       Magisk/KSU module that installs a self-contained zsh environment
             (resh) on Android without Termux. Bins+libs bundled via CI from
             Termux .deb packages. OMZ + p10k + plugins included.
-STATE:      commit 7baa405 on main is the current tip (just pushed)
+STATE:      commit 44c4a52 on main is the current tip. CI green. Latest release: rexshell.zip
 AUTH:       PAT in repo secrets; remote set to PAT URL for push
 INSTALL:    curl -Lo /tmp/rexshell.zip \
               https://github.com/mariayuno/resh-magisk/releases/latest/download/rexshell.zip \
               && /data/adb/ksud module install /tmp/rexshell.zip
 KEY FILES:
-  customize.sh              — flash-time installer (SKIPUNZIP=1, manual unzip)
+  customize.sh              — flash-time installer (SKIPUNZIP=1, manual unzip of ALL targets)
   files/bin/resh            — shell wrapper (sets PATH/FPATH/LD_LIBRARY_PATH, execs bundled zsh)
   files/bin/{zsh,git,fzf,eza,bat,rg,ssh}  — bundled binaries (built by CI)
   files/lib/                — bundled .so deps
@@ -20,15 +20,16 @@ KEY FILES:
   files/config/zsh/         — .zshrc .zshenv .p10k.zsh
   system/bin/resh           — Magisk overlay stub → exec files/bin/resh
   service.sh                — boot-time symlink repair
-  .github/workflows/build.yml — CI: fetches Termux debs, BFS dep resolver, bundles, releases
-LAST SESSION FIXES (commit 7baa405):
-  1. customize.sh was SKIPUNZIP=1 but only extracted files/* — module.prop/service.sh/system/
-     never landed in $MODPATH → KSU threw "cp: can't stat .../module.prop". Fixed by adding
-     all targets to the unzip line.
-  2. Bundled zsh binary compiled with Termux prefix; fpath defaulted to nonexistent Termux path
-     → every autoload (compinit, add-zsh-hook, is-at-least, colors, compdef, vcs_info) failed.
-     Fixed by: (a) extracting share/zsh/functions/ from zsh .deb in CI,
-     (b) exporting FPATH="$MOD/share/zsh/functions:..." in files/bin/resh before exec.
+  uninstall.sh              — cleans /data/adb/ksu/bin/resh + /data/adb/ssh/root/.profile on remove
+  .github/workflows/build.yml — CI: BFS dep resolver, bundles bins+libs+zsh-functions, releases
+KNOWN GOOD STATE:
+  - CI passes. /releases/latest resolves to rexshell.zip (fixed: dropped prerelease:true).
+  - customize.sh extracts module.prop+service.sh+system/+files/ (fixed: SKIPUNZIP=1 was incomplete).
+  - zsh fpath set to bundled share/zsh/functions/ (fixed: autoloads were all missing).
+  - set -euo pipefail safe: xargs replaced with find+while, grep-q guards have || true.
+  - uninstall.sh cleans dangling files outside $MODPATH.
+  - Module is systemless (tmpfs overlay). Only /data/adb/ksu/bin/resh symlink + .profile written
+    outside module dir (both cleaned by uninstall.sh).
 TO RESUME: clone repo, set remote with PAT, edit, push. CI auto-releases on every push to main.
   git clone https://github.com/mariayuno/resh-magisk/
   git remote set-url origin https://<PAT>@github.com/mariayuno/resh-magisk.git
@@ -274,4 +275,95 @@ To make uninstall fully clean, add an `uninstall.sh` to the module:
 rm -f /data/adb/ksu/bin/resh
 rm -f /data/adb/ssh/root/.profile
 ```
+
+---
+
+## 10. Fixed CI aborting under `set -euo pipefail` (all builds failing since b43d5a8)
+
+**File:** `.github/workflows/build.yml`
+**Commit:** `1126cf1`
+
+**Problem:** Every push since `b43d5a8` failed at "Fetch Termux packages + bundle libs". Three patterns all kill the script under `set -euo pipefail`:
+
+1. `xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' | head -1` — `xargs` exits 123 whenever any sub-process returns non-zero. `grep -q ELF` returns 1 for every non-ELF file (scripts, symlinks, data files). With `set -o pipefail`, the pipeline exit code is 123, and `found=$(...)` aborts.
+
+2. `echo ... | grep -q " $pkg " && continue` — when grep returns 1 (not in set), the `&&` expression exits 1; `set -e` aborts.
+
+3. Same pattern in `.so` bundling loop.
+
+**Fix:**
+```sh
+# before (aborts when any file fails the ELF check)
+found=$(find ... | xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' | head -1)
+
+# after (find+while, grep failure explicitly swallowed)
+found=""
+while IFS= read -r f; do
+  file "$f" | grep -q ELF && found="$f" && break || true
+done < <(find "$TMP/pkgs/$pkg" -name "$bin" -type f)
+```
+
+All `grep -q ... && continue` patterns also got `|| true` appended.
+
+---
+
+## 11. Fixed `/releases/latest` returning stale release
+
+**File:** `.github/workflows/build.yml`
+**Commit:** `44c4a52`
+
+**Problem:** The workflow set `prerelease: true`. GitHub's `/releases/latest` API endpoint **excludes prereleases entirely** — it only returns the most recent non-prerelease, non-draft release. So even though every build published a new release with `rexshell.zip`, the stable one-liner URL always resolved to the old `build-20260927` release from before the rename.
+
+**Fix:** Remove `prerelease: true`. Every build now publishes as a regular release and `/releases/latest` always points at the freshest build.
+
+---
+
+## Commit history (updated)
+
+| Commit | Summary |
+|--------|---------|
+| `dc7d304` | fix: replace broken update-binary with standard Magisk installer stub |
+| `4062388` | feat: Termux-free lib bundling, system/bin/resh overlay, drop git/ssh |
+| `9af52e7` | feat: BFS dep resolver — git+ssh back, add any package in 1 line |
+| `2ae97e0` | docs: warn about artifact double-zip; add release body with install instructions |
+| `f00e3d5` | ci: publish prerelease on every push with unique SHA tag |
+| `ee378c5` | ci: fixed zip name, release always fires, drop set -e from fetch |
+| `b43d5a8` | ci: rewrite workflow — release only on success, set -euo pipefail, fixed asset name |
+| `7baa405` | fix: extract module.prop in customize.sh; bundle zsh functions; set FPATH |
+| `8647af4` | docs: add LLM context block + full session log to md; add uninstall.sh |
+| `1126cf1` | fix: CI fetch step aborting under set -euo pipefail |
+| `44c4a52` | fix: drop prerelease:true so /releases/latest resolves correctly |
+
+---
+
+## Session transcript — 2026-09-27 (continued)
+
+### User
+
+> okay, I see no new release in github though and the release is likely not called rexshell.zip, it may be easier though
+
+### Claude
+
+Checked GitHub Actions API. All three runs since `b43d5a8` failed at "Fetch Termux packages + bundle libs". Azure blob (CI log storage) blocked, but the failure pattern was clear from the step name + timing. Root cause: `set -euo pipefail` introduced in `b43d5a8` + `xargs|grep -q ELF` exits 123 on non-ELF files → pipefail propagates → `found=$(...)` aborts. Fixed with `find+while` loop (commit `1126cf1`). Build passed.
+
+Then found the release was there (`build-20260927-0606-1126cf1`, asset `rexshell.zip`) but `/releases/latest` was returning the old `build-20260927` release — because `prerelease: true` excludes releases from that endpoint. Dropped `prerelease: true` (commit `44c4a52`). Build passed, `/releases/latest` now resolves correctly.
+
+**Working install one-liner:**
+```sh
+curl -Lo /tmp/rexshell.zip \
+  https://github.com/mariayuno/resh-magisk/releases/latest/download/rexshell.zip \
+  && /data/adb/ksud module install /tmp/rexshell.zip
+```
+
+---
+
+## Session transcript — 2026-09-27 (continued)
+
+### User
+
+> output that chatlog.md I told you to make after each output
+
+### Claude
+
+Updated context block to reflect current tip (`44c4a52`), appended full session exchanges above, committed and pushed.
 
