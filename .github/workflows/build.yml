@@ -44,7 +44,7 @@ jobs:
             curl -sfL "$REPO/$fname" -o "$TMP/$pkg.deb"
             dpkg-deb -x "$TMP/$pkg.deb" "$TMP/$pkg"
             local found
-            found=$(find "$TMP/$pkg" -name "$bin" -type f | head -1)
+            found=$(find "$TMP/$pkg" -name "$bin" -type f | xargs -I{} sh -c 'file {} | grep -q ELF && echo {}' | head -1)
             [ -z "$found" ] && { echo "  SKIP: $bin not in deb"; return; }
             cp "$found" "$BIN/$bin"
             chmod 755 "$BIN/$bin"
