@@ -140,6 +140,23 @@ jobs:
               cp "$so" "$LIB/$name"
             done
           done
+
+          echo "→ fetching libc++_shared.so (awk regex can't match 'libc++' literally)"
+          LIBCXX_FNAME=$(grep -A 20 "^Package: libc++$" "$TMP/Packages" | grep "^Filename:" | head -1 | awk '{print $2}')
+          if [ -n "$LIBCXX_FNAME" ]; then
+            curl -sfL "$REPO/$LIBCXX_FNAME" -o "$TMP/libcxx.deb"
+            dpkg-deb -x "$TMP/libcxx.deb" "$TMP/libcxx"
+            SHARED=$(find "$TMP/libcxx" -name "libc++_shared.so" | head -1)
+            if [ -n "$SHARED" ]; then
+              cp "$SHARED" "$LIB/libc++_shared.so"
+              echo "  ✓ libc++_shared.so ($(du -sh "$LIB/libc++_shared.so" | cut -f1))"
+            else
+              echo "  ✗ libc++_shared.so not found in libc++ package — contents:"; find "$TMP/libcxx" -name "*.so" | head -10; exit 1
+            fi
+          else
+            echo "  ✗ libc++ not found in package index"; exit 1
+          fi
+
           echo "  $(ls "$LIB" | wc -l) libs bundled"
 
           echo "→ bins: $(ls "$BIN")"
