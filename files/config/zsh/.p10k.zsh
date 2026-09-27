@@ -19,7 +19,6 @@
   typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
     os_icon
     dir
-    vcs
     prompt_char
   )
 
@@ -148,7 +147,7 @@
 
   # ─────────────────────────────────────────────
 
-  typeset -g POWERLEVEL9K_INSTANT_PROMPT=verbose
+  typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
   typeset -g POWERLEVEL9K_DISABLE_HOT_RELOAD=true
 
   (( ! $+functions[p10k] )) || p10k reload
