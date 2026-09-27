@@ -13,3 +13,4 @@ export SAVEHIST=$HISTSIZE
 # Do not load Termux's global zshrc.
 # This prevents its broken command-not-found handler.
 unsetopt GLOBAL_RCS
+export TERM=xterm-256color  # override if your client supports it e.g. kitty
