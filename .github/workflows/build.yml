@@ -45,11 +45,20 @@ jobs:
           || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.gz" | gunzip > "$TMP/Packages"
           echo "  $(wc -l < "$TMP/Packages") lines"
 
+          # Extract a field from a package stanza using fixed-string matching.
+          # grep -A 30 finds the stanza; grep -F on pkg name avoids awk ERE issues
+          # with metacharacters in package names (libc++, python3.11, node.js, etc.)
+          pkg_field() {
+            local pkg="$1" field="$2"
+            grep -A 30 "^Package: ${pkg}$" "$TMP/Packages" \
+              | grep -m1 "^${field}:" | cut -d' ' -f2-
+          }
+
           fetch_pkg() {
             local pkg="$1"
             [ -d "$TMP/pkgs/$pkg" ] && return 0
             local fname
-            fname=$(awk "/^Package: ${pkg}$/{f=1} f&&/^Filename:/{print \$2;exit}" "$TMP/Packages")
+            fname=$(pkg_field "$pkg" "Filename")
             [ -z "$fname" ] && { echo "  ⚠ $pkg not in index"; return 1; }
             curl -sfL "$REPO/$fname" -o "$TMP/pkgs/$pkg.deb"
             dpkg-deb -x "$TMP/pkgs/$pkg.deb" "$TMP/pkgs/$pkg"
@@ -64,11 +73,7 @@ jobs:
               echo " $resolved " | grep -q " $pkg " && continue || true
               resolved="$resolved $pkg"
               local deps
-              deps=$(awk "
-                /^Package: ${pkg}$/ { f=1 }
-                f && /^Depends:/    { gsub(/^Depends: /,\"\"); print; f=0 }
-                f && /^$/           { f=0 }
-              " "$TMP/Packages" \
+              deps=$(pkg_field "$pkg" "Depends" \
                 | tr ',' '\n' | sed 's/|[^,]*//' | sed 's/ (.*//' \
                 | tr -d ' ' | grep -v '^$' || true)
               for dep in $deps; do
@@ -140,22 +145,6 @@ jobs:
               cp "$so" "$LIB/$name"
             done
           done
-
-          echo "→ fetching libc++_shared.so (awk regex can't match 'libc++' literally)"
-          LIBCXX_FNAME=$(grep -A 20 "^Package: libc++$" "$TMP/Packages" | grep "^Filename:" | head -1 | awk '{print $2}')
-          if [ -n "$LIBCXX_FNAME" ]; then
-            curl -sfL "$REPO/$LIBCXX_FNAME" -o "$TMP/libcxx.deb"
-            dpkg-deb -x "$TMP/libcxx.deb" "$TMP/libcxx"
-            SHARED=$(find "$TMP/libcxx" -name "libc++_shared.so" | head -1)
-            if [ -n "$SHARED" ]; then
-              cp "$SHARED" "$LIB/libc++_shared.so"
-              echo "  ✓ libc++_shared.so ($(du -sh "$LIB/libc++_shared.so" | cut -f1))"
-            else
-              echo "  ✗ libc++_shared.so not found in libc++ package — contents:"; find "$TMP/libcxx" -name "*.so" | head -10; exit 1
-            fi
-          else
-            echo "  ✗ libc++ not found in package index"; exit 1
-          fi
 
           echo "  $(ls "$LIB" | wc -l) libs bundled"
 
