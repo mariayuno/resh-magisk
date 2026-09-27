@@ -7,8 +7,8 @@
 
 MOD="/data/adb/modules/rexshell/files"
 RESH_PKG="/data/adb/resh"
-# Termux debs extract their files under this path inside RESH_PKG
 TPFX="$RESH_PKG/data/data/com.termux/files/usr"
+MANIFEST="/sdcard/resh/packages"   # survives device moves — source of truth for restore
 TMP="$(mktemp -d)"
 REPO="https://packages.termux.dev/apt/termux-main"
 ARCH="aarch64"
@@ -128,6 +128,10 @@ FINDEOF
   rm -rf "$TMP"
   echo "✓ $bin installed ($(dpkg_cmd --list "$pkg" 2>/dev/null | awk '/^ii/{print $3}'))"
   echo "  available in new resh sessions immediately"
+
+  # Record to manifest (only explicit installs, not pulled-in deps)
+  touch "$MANIFEST"
+  grep -qx "$pkg" "$MANIFEST" || echo "$pkg" >> "$MANIFEST"
 }
 
 cmd_remove() {
@@ -135,6 +139,19 @@ cmd_remove() {
   [ -z "$pkg" ] && die "usage: resh-pkg remove <package>"
   init_db
   dpkg_cmd --remove "$pkg" && echo "✓ $pkg removed" || die "removal failed"
+  # Remove from manifest
+  grep -v "^${pkg}$" "$MANIFEST" > "$MANIFEST.tmp" 2>/dev/null && mv "$MANIFEST.tmp" "$MANIFEST" || true
+}
+
+cmd_restore() {
+  [ -f "$MANIFEST" ] || { echo "no manifest at $MANIFEST — nothing to restore"; exit 0; }
+  local count=0
+  while IFS= read -r pkg; do
+    [ -z "$pkg" ] && continue
+    echo "→ restoring $pkg..."
+    cmd_install "$pkg" && count=$((count+1)) || echo "  ⚠ $pkg failed — skipping"
+  done < "$MANIFEST"
+  echo "restore complete: $count package(s) reinstalled"
 }
 
 cmd_list() {
@@ -152,10 +169,12 @@ cmd_files() {
 case "${1:-}" in
   install) cmd_install "$2" "${3:-}" ;;
   remove)  cmd_remove  "$2" ;;
+  restore) cmd_restore ;;
   list)    cmd_list ;;
   files)   cmd_files "$2" ;;
   *)       echo "usage: resh-pkg install <pkg> [bin]"
            echo "       resh-pkg remove  <pkg>"
+           echo "       resh-pkg restore          # reinstall all from /sdcard/resh/packages"
            echo "       resh-pkg list"
            echo "       resh-pkg files   <pkg>" ;;
 esac
