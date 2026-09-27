@@ -2,7 +2,7 @@ name: Build
 
 on:
   schedule:
-    - cron: '0 3 * * 1'  # weekly Monday 03:00 UTC
+    - cron: '0 3 * * 1'
   push:
     branches: [main]
   workflow_dispatch:
@@ -16,67 +16,61 @@ jobs:
       - name: Fetch Termux aarch64 packages
         run: |
           set -e
-          TERMUX_REPO="https://packages.termux.dev/apt/termux-main"
+          REPO="https://packages.termux.dev/apt/termux-main"
           ARCH="aarch64"
           TMP="$(mktemp -d)"
           BIN="files/bin"
           mkdir -p "$BIN"
 
-          # Download and extract a .deb, copy the named binary
+          echo "→ fetching package index"
+          curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.xz" | xz -d > "$TMP/Packages" \
+          || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages.gz" | gunzip > "$TMP/Packages" \
+          || curl -sfL "$REPO/dists/stable/main/binary-$ARCH/Packages" > "$TMP/Packages"
+          echo "  index: $(wc -l < "$TMP/Packages") lines"
+
           get_bin() {
-            local pkg="$1" binary="$2"
-            echo "→ $pkg ($binary)"
-            local url
-            url=$(curl -sf "$TERMUX_REPO/dists/stable/main/binary-$ARCH/Packages" \
-              | awk "/^Package: $pkg\$/{found=1} found && /^Filename:/{print \$2; exit}")
-            [ -z "$url" ] && { echo "SKIP: $pkg not found in index"; return; }
-            curl -sfL "$TERMUX_REPO/$url" -o "$TMP/$pkg.deb"
+            local pkg="$1" bin="$2"
+            echo "→ $pkg"
+            local fname
+            fname=$(awk "/^Package: $pkg$/{f=1} f&&/^Filename:/{print \$2;exit}" "$TMP/Packages")
+            [ -z "$fname" ] && { echo "  SKIP: not in index"; return; }
+            curl -sfL "$REPO/$fname" -o "$TMP/$pkg.deb"
             dpkg-deb -x "$TMP/$pkg.deb" "$TMP/$pkg"
-            find "$TMP/$pkg" -name "$binary" -type f | head -1 | xargs -I{} cp {} "$BIN/$binary"
-            chmod 755 "$BIN/$binary"
+            local found
+            found=$(find "$TMP/$pkg" -name "$bin" -type f | head -1)
+            [ -z "$found" ] && { echo "  SKIP: $bin not in deb"; return; }
+            cp "$found" "$BIN/$bin"
+            chmod 755 "$BIN/$bin"
+            echo "  ✓ $(ls -lh "$BIN/$bin" | awk '{print $5}')"
           }
 
-          get_bin zsh          zsh
-          get_bin eza          eza
-          get_bin bat          bat
-          get_bin fzf          fzf
-          get_bin ripgrep      rg
-          get_bin git          git
-          get_bin openssh      ssh
+          get_bin zsh     zsh
+          get_bin eza     eza
+          get_bin bat     bat
+          get_bin fzf     fzf
+          get_bin ripgrep rg
+          get_bin git     git
+          get_bin openssh ssh
 
       - name: Clone oh-my-zsh + plugins
         run: |
           OMZ="files/oh-my-zsh"
-          ZSH_CUSTOM="$OMZ/custom"
           git clone --depth=1 https://github.com/ohmyzsh/ohmyzsh.git "$OMZ"
-          git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
-            "$ZSH_CUSTOM/themes/powerlevel10k"
-          git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions \
-            "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
-          git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting \
-            "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
-          git clone --depth=1 https://github.com/agkozak/zsh-z \
-            "$ZSH_CUSTOM/plugins/z"
+          git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$OMZ/custom/themes/powerlevel10k"
+          git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions "$OMZ/custom/plugins/zsh-autosuggestions"
+          git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting "$OMZ/custom/plugins/zsh-syntax-highlighting"
+          git clone --depth=1 https://github.com/agkozak/zsh-z "$OMZ/custom/plugins/z"
+          find "$OMZ" -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-          # Strip .git from all cloned dirs to save space
-          find files/oh-my-zsh -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+      - name: List bins
+        run: ls -lh files/bin/
 
-      - name: List bundled bins
-        run: |
-          echo "=== Bundled bins ==="
-          ls -lh files/bin/
-          echo "=== oh-my-zsh size ==="
-          du -sh files/oh-my-zsh/
-
-      - name: Package zip
+      - name: Package
         run: |
           VERSION="$(date +%Y%m%d)"
           sed -i "s/^version=.*/version=v$VERSION/" module.prop
           sed -i "s/^versionCode=.*/versionCode=$VERSION/" module.prop
-          zip -r "rexshell-$VERSION.zip" \
-            META-INF module.prop files \
-            --exclude "*.git*" "*.github*"
-          echo "ZIP=rexshell-$VERSION.zip" >> "$GITHUB_ENV"
+          zip -r "rexshell-$VERSION.zip" META-INF module.prop files --exclude "*.git*" "*.github*"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -91,6 +85,5 @@ jobs:
           tag_name: "build-$(date +%Y%m%d)"
           name: "rexshell $(date +%Y-%m-%d)"
           files: "*.zip"
-          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
