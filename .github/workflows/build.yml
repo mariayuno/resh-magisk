@@ -7,11 +7,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set version
+        id: version
+        run: echo "tag=build-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch Termux aarch64 packages
         run: |
@@ -62,15 +69,13 @@ jobs:
           git clone --depth=1 https://github.com/agkozak/zsh-z "$OMZ/custom/plugins/z"
           find "$OMZ" -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-      - name: List bins
-        run: ls -lh files/bin/
-
       - name: Package
         run: |
-          VERSION="$(date +%Y%m%d)"
-          sed -i "s/^version=.*/version=v$VERSION/" module.prop
-          sed -i "s/^versionCode=.*/versionCode=$VERSION/" module.prop
-          zip -r "rexshell-$VERSION.zip" META-INF module.prop files --exclude "*.git*" "*.github*"
+          VERSION="${{ steps.version.outputs.tag }}"
+          sed -i "s/^version=.*/version=$VERSION/" module.prop
+          sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" module.prop
+          zip -r "rexshell-$(date +%Y%m%d).zip" META-INF module.prop files --exclude "*.git*" "*.github*"
+          ls -lh *.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -79,11 +84,9 @@ jobs:
           path: "*.zip"
 
       - name: Release
-        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "build-$(date +%Y%m%d)"
-          name: "rexshell $(date +%Y-%m-%d)"
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: rexshell ${{ steps.version.outputs.tag }}
           files: "*.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
