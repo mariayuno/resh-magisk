@@ -15,6 +15,29 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 [[ -f "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"
 
 # completion
+autoload -Uz compinit || {
+  print -u2 '[rexshell] ERROR: compinit could not be loaded'
+  return 1
+}
+
+autoload -Uz add-zsh-hook || {
+  print -u2 '[rexshell] ERROR: add-zsh-hook could not be loaded'
+  return 1
+}
+
+autoload -Uz is-at-least || {
+  print -u2 '[rexshell] ERROR: is-at-least could not be loaded'
+  return 1
+}
+
+autoload -Uz vcs_info || {
+  print -u2 '[rexshell] ERROR: vcs_info could not be loaded'
+  return 1
+}
+
+compinit -d "$XDG_CACHE_HOME/zsh/zcompdump" -C
+
+# completion
 autoload -Uz compinit
 compinit -d "$XDG_CACHE_HOME/zsh/zcompdump" -C
 zstyle ':completion:*' menu select
