@@ -22,3 +22,11 @@ exec /data/adb/modules/rexshell/files/bin/resh
 PROFILE
   chmod 644 "$PROFILE"
 fi
+
+# Termux compat symlink — dpkg/scripts hardcode /data/data/com.termux/files/usr/bin/bash
+# Only create if Termux is not installed (never stomp real user data)
+TCOMPAT="/data/data/com.termux"
+if [ ! -e "$TCOMPAT" ]; then
+  mkdir -p /data/data
+  ln -sf "$MOD/files" "$TCOMPAT/files"
+fi

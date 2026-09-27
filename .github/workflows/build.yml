@@ -34,7 +34,7 @@ jobs:
           # ADD PACKAGES HERE — just the Termux package name, one per line.
           # Transitive deps and their .so files are resolved automatically.
           # ════════════════════════════════════════════════════════════════
-          PKGS="zsh eza bat fzf ripgrep git openssh curl dpkg apt gpgv termux-keyring libc++"
+          PKGS="zsh eza bat fzf ripgrep git openssh curl dpkg apt gpgv termux-keyring libc++ bash"
 
           # Binary name when it differs from the package name
           BIN_OVERRIDES="ripgrep=rg openssh=ssh termux-keyring=NOBIN libc++=NOBIN"
