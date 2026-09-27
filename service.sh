@@ -11,19 +11,20 @@ if [ -d "$KSU_BIN" ]; then
   ln -sf "$MOD/files/bin/resh" "$KSU_BIN/resh"
   chmod 755 "$KSU_BIN/resh"
 
-  # Wrap any system binary that may be broken due to missing/outdated
-  # system libs — our bundled libs in $MOD_LIB take precedence via
-  # LD_LIBRARY_PATH, but the binary itself still comes from /system/bin.
-  # Add more tools to this list as needed.
-  for tool in curl wget ssh git; do
-    bin="/system/bin/$tool"
-    [ -x "$bin" ] || continue
-    [ -f "$KSU_BIN/$tool" ] && continue  # already wrapped or overridden
-    cat > "$KSU_BIN/$tool" << WRAPPER
-#!/system/bin/sh
-export LD_LIBRARY_PATH="$MOD_LIB:/system/lib64:/vendor/lib64"
-exec $bin "\$@"
-WRAPPER
+  # Wrap every ELF binary in /system/bin that fails to execute due to
+  # missing/outdated system libs. Our bundled libs load first via
+  # LD_LIBRARY_PATH — the real system binary still runs underneath.
+  for bin in /system/bin/*; do
+    tool="$(basename "$bin")"
+    [ -f "$KSU_BIN/$tool" ] && continue   # already have an override
+    # probe: if the binary links fine, skip it; only wrap broken ones
+    LD_LIBRARY_PATH="$MOD_LIB:/system/lib64:/vendor/lib64"       "$bin" --version >/dev/null 2>&1 && continue || true
+    # double-check it IS an ELF (skip scripts, etc.)
+    file "$bin" 2>/dev/null | grep -q ELF || continue
+    printf '#!/system/bin/sh
+export LD_LIBRARY_PATH="%s:/system/lib64:/vendor/lib64"
+exec "%s" "$@"
+'       "$MOD_LIB" "$bin" > "$KSU_BIN/$tool"
     chmod 755 "$KSU_BIN/$tool"
   done
 fi
