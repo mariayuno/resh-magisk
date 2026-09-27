@@ -21,8 +21,8 @@ jobs:
         run: echo "tag=build-$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch Termux packages + bundle libs
+        continue-on-error: false
         run: |
-          set -e
           REPO="https://packages.termux.dev/apt/termux-main"
           ARCH="aarch64"
           TMP="$(mktemp -d)"
@@ -146,6 +146,7 @@ jobs:
           echo "  total libs bundled: $(ls "$LIB" | wc -l)"
 
       - name: Clone oh-my-zsh + plugins
+        continue-on-error: true
         run: |
           OMZ="files/oh-my-zsh"
           git clone --depth=1 https://github.com/ohmyzsh/ohmyzsh.git "$OMZ"
@@ -160,12 +161,12 @@ jobs:
           VERSION="${{ steps.version.outputs.tag }}"
           sed -i "s/^version=.*/version=$VERSION/" module.prop
           sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" module.prop
-          zip -r "rexshell-$(date +%Y%m%d).zip" \
+          zip -r "rexshell.zip" \
             META-INF module.prop customize.sh service.sh files system \
             --exclude "*.git*" "*.github*"
           ls -lh *.zip
           echo "--- zip contents (summary) ---"
-          unzip -l "rexshell-$(date +%Y%m%d).zip" | awk '
+          unzip -l "rexshell.zip" | awk '
             /files\/bin\//  { bins++ }
             /files\/lib\//  { libs++ }
             /files\/oh-my-zsh\// { omz++ }
@@ -181,6 +182,7 @@ jobs:
           path: "*.zip"
 
       - name: Release
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
