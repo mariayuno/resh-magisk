@@ -15,7 +15,7 @@ ui_print "  rexshell"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Persistent user dir — never wiped on update
-mkdir -p "$RESH_HOME/config"
+mkdir -p "$RESH_HOME/config" "$RESH_HOME/bin"
 # dpkg-installed packages land under this path (Termux deb internal layout)
 TPFX="/data/adb/resh/data/data/com.termux/files/usr"
 mkdir -p \
@@ -74,7 +74,9 @@ if [ ! -f "$USER_ZSH" ]; then
 # Examples:
 #   alias ll='eza -la'
 #   export EDITOR=nvim
-#   resh-pkg install neovim nvim   # install extra packages
+#   resh-pkg install neovim        # install extra packages
+#
+# Drop personal scripts in /sdcard/resh/bin/ — they're in PATH and survive everything.
 STUB
   ui_print "  ✓ user config stub: $USER_ZSH"
 fi

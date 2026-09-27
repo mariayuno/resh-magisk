@@ -12,13 +12,13 @@ export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
 
 mkdir -p \
-  "$RESH_HOME/config" \
+  "$RESH_HOME/config" "$RESH_HOME/bin" \
   "$RESH_PKG/bin" "$RESH_PKG/lib" \
   "$TPFX/bin" "$TPFX/lib" \
   "$RESH_PKG/var/lib/apt/lists"
 
-# dpkg-installed packages (TPFX) take precedence, then resh-pkg legacy bins, then module
-export PATH="$TPFX/bin:$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"
+# Priority: user scripts > dpkg-installed > resh-pkg legacy > module > system
+export PATH="$RESH_HOME/bin:$TPFX/bin:$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"
 export LD_LIBRARY_PATH="$TPFX/lib:$RESH_PKG/lib:$MOD/lib:/system/lib64:/vendor/lib64"
 
 export XDG_DATA_HOME="$HOME/.local/share"
