@@ -11,7 +11,11 @@ TPFX="$RESH_PKG/data/data/com.termux/files/usr"
 export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
 
-mkdir -p "$RESH_HOME/config" "$RESH_PKG/bin" "$RESH_PKG/lib"
+mkdir -p \
+  "$RESH_HOME/config" \
+  "$RESH_PKG/bin" "$RESH_PKG/lib" \
+  "$TPFX/bin" "$TPFX/lib" \
+  "$RESH_PKG/var/lib/apt/lists"
 
 # dpkg-installed packages (TPFX) take precedence, then resh-pkg legacy bins, then module
 export PATH="$TPFX/bin:$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"

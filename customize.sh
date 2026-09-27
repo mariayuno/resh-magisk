@@ -20,6 +20,8 @@ mkdir -p "$RESH_HOME/config"
 TPFX="/data/adb/resh/data/data/com.termux/files/usr"
 mkdir -p \
   /data/adb/resh/bin /data/adb/resh/lib \
+  /data/adb/resh/var/lib/apt/lists \
+  "$TPFX/bin" "$TPFX/lib" \
   "$TPFX/var/lib/dpkg/info" \
   "$TPFX/var/lib/dpkg/updates" \
   "$TPFX/var/lib/dpkg/alternatives"
