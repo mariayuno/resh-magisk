@@ -38,8 +38,6 @@ autoload -Uz vcs_info || {
   return 1
 }
 
-compinit -d "$XDG_CACHE_HOME/zsh/zcompdump" -C
-
 zstyle ':completion:*' menu select
 bindkey '\t' menu-complete
 bindkey "$terminfo[kcbt]" reverse-menu-complete
