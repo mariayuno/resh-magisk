@@ -5,16 +5,17 @@
 MOD="/data/adb/modules/rexshell/files"
 RESH_HOME="/sdcard/resh"
 RESH_PKG="/data/adb/resh"
+# dpkg installs Termux debs here (their internal paths are data/data/com.termux/files/usr/...)
+TPFX="$RESH_PKG/data/data/com.termux/files/usr"
 
 export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
 
-# Persistent user dir — survives module updates and reflashes
 mkdir -p "$RESH_HOME/config" "$RESH_PKG/bin" "$RESH_PKG/lib"
 
-# User bins/libs take precedence over module bundled ones
-export PATH="$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"
-export LD_LIBRARY_PATH="$RESH_PKG/lib:$MOD/lib:/system/lib64:/vendor/lib64"
+# dpkg-installed packages (TPFX) take precedence, then resh-pkg legacy bins, then module
+export PATH="$TPFX/bin:$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"
+export LD_LIBRARY_PATH="$TPFX/lib:$RESH_PKG/lib:$MOD/lib:/system/lib64:/vendor/lib64"
 
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"

@@ -16,7 +16,14 @@ ui_print "━━━━━━━━━━━━━━━━━━━━━━━�
 
 # Persistent user dir — never wiped on update
 mkdir -p "$RESH_HOME/config"
-mkdir -p /data/adb/resh/bin /data/adb/resh/lib
+# dpkg-installed packages land under this path (Termux deb internal layout)
+TPFX="/data/adb/resh/data/data/com.termux/files/usr"
+mkdir -p \
+  /data/adb/resh/bin /data/adb/resh/lib \
+  "$TPFX/var/lib/dpkg/info" \
+  "$TPFX/var/lib/dpkg/updates" \
+  "$TPFX/var/lib/dpkg/alternatives"
+[ -f "$TPFX/var/lib/dpkg/status" ] || touch "$TPFX/var/lib/dpkg/status"
 ui_print "  ✓ persistent dir: $RESH_HOME"
 
 # Extract all required module files.

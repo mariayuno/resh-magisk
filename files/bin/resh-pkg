@@ -1,14 +1,14 @@
 #!/system/bin/sh
-# resh-pkg — install Termux packages into the resh module at runtime
+# resh-pkg — install/remove Termux packages with dpkg tracking
 # Usage: resh-pkg install <pkg> [<binary-name>]
+#        resh-pkg remove  <pkg>
 #        resh-pkg list
+#        resh-pkg files   <pkg>
 
 MOD="/data/adb/modules/rexshell/files"
-RESH_HOME="/sdcard/resh"
 RESH_PKG="/data/adb/resh"
-BIN="$RESH_PKG/bin"
-LIB="$RESH_PKG/lib"
-mkdir -p "$BIN" "$LIB" "$RESH_HOME/config"
+# Termux debs extract their files under this path inside RESH_PKG
+TPFX="$RESH_PKG/data/data/com.termux/files/usr"
 TMP="$(mktemp -d)"
 REPO="https://packages.termux.dev/apt/termux-main"
 ARCH="aarch64"
@@ -16,11 +16,37 @@ SKIP_LIBS="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so libandroid.so
 
 die() { echo "resh-pkg: $*" >&2; rm -rf "$TMP"; exit 1; }
 
+# Portable ELF check — no 'file' command needed
+is_elf() {
+  local magic
+  magic=$(dd if="$1" bs=1 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+  [ "$magic" = "7f454c46" ]
+}
+
+init_db() {
+  mkdir -p \
+    "$TPFX/var/lib/dpkg/info" \
+    "$TPFX/var/lib/dpkg/updates" \
+    "$TPFX/var/lib/dpkg/alternatives" \
+    "$RESH_PKG/var/lib/apt/lists"
+  [ -f "$TPFX/var/lib/dpkg/status" ] || touch "$TPFX/var/lib/dpkg/status"
+}
+
+dpkg_cmd() {
+  "$MOD/bin/dpkg" \
+    --instdir="$RESH_PKG" \
+    --admindir="$TPFX/var/lib/dpkg" \
+    --force-not-root \
+    --force-bad-path \
+    "$@"
+}
+
 fetch_index() {
+  [ -f "$TMP/Packages" ] && return 0
   echo "→ fetching package index..."
-  curl -sL "$REPO/dists/stable/main/binary-$ARCH/Packages.xz" | xz -d > "$TMP/Packages" 2>/dev/null \
-  || curl -sL "$REPO/dists/stable/main/binary-$ARCH/Packages.gz" | gunzip > "$TMP/Packages" \
-  || die "failed to fetch package index"
+  curl -sL "$REPO/dists/stable/main/binary-$ARCH/Packages.gz" \
+    | gunzip > "$TMP/Packages" \
+    || die "failed to fetch package index"
 }
 
 fetch_pkg() {
@@ -31,16 +57,18 @@ fetch_pkg() {
   [ -z "$fname" ] && { echo "  ⚠ $pkg not in index"; return 1; }
   mkdir -p "$TMP/pkgs"
   curl -sL "$REPO/$fname" -o "$TMP/pkgs/$pkg.deb" || return 1
-  dpkg-deb -x "$TMP/pkgs/$pkg.deb" "$TMP/pkgs/$pkg"
+  "$MOD/bin/dpkg-deb" -x "$TMP/pkgs/$pkg.deb" "$TMP/pkgs/$pkg"
+  # keep the .deb itself for dpkg --install later
 }
 
 resolve_deps() {
   local queue="$1" resolved=""
   while [ -n "$queue" ]; do
-    local pkg; pkg=$(echo "$queue" | awk '{print $1}')
+    local pkg
+    pkg=$(echo "$queue" | awk '{print $1}')
     queue=$(echo "$queue" | cut -d' ' -f2-)
     [ "$queue" = "$pkg" ] && queue=""
-    echo " $resolved " | grep -q " $pkg " && continue
+    echo " $resolved " | grep -q " $pkg " && continue || true
     resolved="$resolved $pkg"
     local deps
     deps=$(awk "
@@ -51,7 +79,7 @@ resolve_deps() {
       | tr ',' '\n' | sed 's/|[^,]*//' | sed 's/ (.*//' \
       | tr -d ' ' | grep -v '^$' || true)
     for dep in $deps; do
-      echo " $resolved $queue " | grep -q " $dep " || queue="$queue $dep"
+      echo " $resolved $queue " | grep -q " $dep " || queue="$queue $dep" || true
     done
   done
   echo "$resolved"
@@ -60,57 +88,74 @@ resolve_deps() {
 cmd_install() {
   local pkg="$1" bin="${2:-$1}"
   [ -z "$pkg" ] && die "usage: resh-pkg install <package> [binary-name]"
-
+  init_db
   fetch_index
 
   echo "→ resolving deps for $pkg..."
   local all
   all=$(resolve_deps "$pkg")
-  echo "  packages to fetch: $(echo $all | wc -w)"
+  echo "  packages: $(echo $all | wc -w)"
 
   echo "→ downloading..."
   for p in $all; do
     fetch_pkg "$p" && echo "  ✓ $p" || true
   done
 
-  echo "→ extracting binary '$bin' from '$pkg'..."
-  found=$(find "$TMP/pkgs/$pkg" -name "$bin" -type f 2>/dev/null | while read -r f; do file "$f" 2>/dev/null | grep -q ELF && echo "$f" && break; done | head -1)
-
-  if [ -z "$found" ]; then
-    # list what binaries ARE available to help the user
-    echo "  ⚠ binary '$bin' not found. Available ELF files in $pkg:"
-    find "$TMP/pkgs/$pkg" -type f 2>/dev/null | while read -r f; do file "$f" 2>/dev/null | grep -q ELF && echo "    $f"; done || true
-    rm -rf "$TMP"
-    exit 1
-  fi
-
-  cp "$found" "$BIN/$bin" && chmod 755 "$BIN/$bin"
-  echo "  ✓ installed $bin → $BIN/$bin"
-
-  echo "→ bundling .so deps..."
-  local count=0
+  # Install ALL resolved debs via dpkg for proper tracking
+  echo "→ registering with dpkg..."
   for p in $all; do
-    [ -d "$TMP/pkgs/$p" ] || continue
-    find "$TMP/pkgs/$p" \( -name "*.so" -o -name "*.so.*" \) 2>/dev/null | while read -r so; do
-      name="$(basename "$so")"
-      echo " $SKIP_LIBS " | grep -q " $name " && continue
-      [ -f "$LIB/$name" ] && continue
-      cp "$so" "$LIB/$name"
-      echo "  ✓ $name"
-    done
+    [ -f "$TMP/pkgs/$p.deb" ] || continue
+    dpkg_cmd --unpack "$TMP/pkgs/$p.deb" 2>&1 | grep -v "^dpkg:" || true
+    dpkg_cmd --configure "$p" 2>&1 | grep -v "^dpkg:" || true
   done
 
+  # Verify the requested binary landed somewhere under RESH_PKG
+  local found=""
+  while IFS= read -r f; do
+    is_elf "$f" && found="$f" && break || true
+  done <<- FINDEOF
+$(find "$RESH_PKG" -name "$bin" -type f 2>/dev/null)
+FINDEOF
+
+  if [ -z "$found" ]; then
+    echo "  ⚠ binary '$bin' not found after install. Available in $pkg:"
+    find "$TMP/pkgs/$pkg" -type f 2>/dev/null | while IFS= read -r f; do
+      is_elf "$f" && echo "    $(basename "$f")" || true
+    done
+    rm -rf "$TMP"; exit 1
+  fi
+
   rm -rf "$TMP"
-  echo "done — $bin available immediately in new resh sessions"
+  echo "✓ $bin installed ($(dpkg_cmd --list "$pkg" 2>/dev/null | awk '/^ii/{print $3}'))"
+  echo "  available in new resh sessions immediately"
+}
+
+cmd_remove() {
+  local pkg="$1"
+  [ -z "$pkg" ] && die "usage: resh-pkg remove <package>"
+  init_db
+  dpkg_cmd --remove "$pkg" && echo "✓ $pkg removed" || die "removal failed"
 }
 
 cmd_list() {
-  echo "installed binaries:"
-  ls -1 "$BIN"
+  init_db
+  dpkg_cmd --list 2>/dev/null | awk '/^ii/{printf "  %-30s %s\n", $2, $3}'
+}
+
+cmd_files() {
+  local pkg="$1"
+  [ -z "$pkg" ] && die "usage: resh-pkg files <package>"
+  init_db
+  dpkg_cmd --listfiles "$pkg" 2>/dev/null || die "$pkg not installed"
 }
 
 case "${1:-}" in
   install) cmd_install "$2" "${3:-}" ;;
+  remove)  cmd_remove  "$2" ;;
   list)    cmd_list ;;
-  *)       echo "usage: resh-pkg install <package> [binary-name]"; echo "       resh-pkg list" ;;
+  files)   cmd_files "$2" ;;
+  *)       echo "usage: resh-pkg install <pkg> [bin]"
+           echo "       resh-pkg remove  <pkg>"
+           echo "       resh-pkg list"
+           echo "       resh-pkg files   <pkg>" ;;
 esac
