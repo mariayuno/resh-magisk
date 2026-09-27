@@ -74,7 +74,7 @@ jobs:
           VERSION="${{ steps.version.outputs.tag }}"
           sed -i "s/^version=.*/version=$VERSION/" module.prop
           sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" module.prop
-          zip -r "rexshell-$(date +%Y%m%d).zip" META-INF module.prop files --exclude "*.git*" "*.github*"
+          zip -r "rexshell-$(date +%Y%m%d).zip" META-INF module.prop files customize.sh service.sh --exclude "*.git*" "*.github*"
           ls -lh *.zip
 
       - name: Upload artifact
