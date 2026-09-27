@@ -131,14 +131,57 @@ jobs:
           echo "→ bins: $(ls "$BIN")"
 
       - name: Clone oh-my-zsh + plugins
-        continue-on-error: true
         run: |
+          set -euo pipefail
+
           OMZ="files/oh-my-zsh"
-          git clone --depth=1 https://github.com/ohmyzsh/ohmyzsh.git "$OMZ"
-          git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$OMZ/custom/themes/powerlevel10k"
-          git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions "$OMZ/custom/plugins/zsh-autosuggestions"
-          git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting "$OMZ/custom/plugins/zsh-syntax-highlighting"
-          git clone --depth=1 https://github.com/agkozak/zsh-z "$OMZ/custom/plugins/z"
+
+          git clone --depth=1 \
+            https://github.com/ohmyzsh/ohmyzsh.git \
+            "$OMZ"
+
+          git clone --depth=1 \
+            https://github.com/romkatv/powerlevel10k.git \
+            "$OMZ/custom/themes/powerlevel10k"
+
+          git clone --depth=1 \
+            https://github.com/zsh-users/zsh-autosuggestions \
+            "$OMZ/custom/plugins/zsh-autosuggestions"
+
+          git clone --depth=1 \
+            https://github.com/zsh-users/zsh-syntax-highlighting \
+            "$OMZ/custom/plugins/zsh-syntax-highlighting"
+
+          git clone --depth=1 \
+            https://github.com/agkozak/zsh-z \
+            "$OMZ/custom/plugins/z"
+
+          echo "→ building gitstatusd"
+
+          cd "$OMZ/custom/themes/powerlevel10k/gitstatus"
+
+          ./build -w -s
+
+          echo "→ verifying gitstatusd"
+
+          file usrbin/gitstatusd
+
+          readelf -l usrbin/gitstatusd | grep -E \
+            'Requesting program interpreter|INTERP' || true
+
+          ldd usrbin/gitstatusd || true
+
+          test -x usrbin/gitstatusd || {
+            echo "ERROR: gitstatusd was not built"
+            exit 1
+          }
+
+          echo "✓ gitstatusd:"
+          file usrbin/gitstatusd
+
+          echo "→ returning to repository root"
+          cd "$GITHUB_WORKSPACE"
+
           find "$OMZ" -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
       - name: Package
