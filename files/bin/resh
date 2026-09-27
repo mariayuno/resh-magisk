@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # resh — Rex's Shell
-# Self-contained: bundled tools only
+# Canonical runtime launcher
 
 MOD="/data/adb/modules/rexshell/files"
 
@@ -21,11 +21,12 @@ mkdir -p \
   "$HOME/.cache/zsh" \
   "$HOME/.local/state/zsh"
 
-# Include every directory in the bundled Zsh function tree.
-# Required for:
+# Zsh functions are nested several levels deep.
+# Include the complete tree so autoload can find things like:
 #   Completion/Base/_call_program
 #   VCS_Info/Backends/VCS_INFO_detect_git
 #   Misc/add-zsh-hook
+
 FPATH=""
 
 while IFS= read -r dir; do
