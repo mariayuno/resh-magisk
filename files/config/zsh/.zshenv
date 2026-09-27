@@ -9,3 +9,7 @@ export PATH="$MOD/bin:/system/bin:/system/xbin"
 export HISTFILE="$HOME/.local/state/zsh/history"
 export HISTSIZE=1000000
 export SAVEHIST=$HISTSIZE
+
+# Do not load Termux's global zshrc.
+# This prevents its broken command-not-found handler.
+unsetopt GLOBAL_RCS
