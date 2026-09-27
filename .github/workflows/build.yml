@@ -34,10 +34,10 @@ jobs:
           # ADD PACKAGES HERE — just the Termux package name, one per line.
           # Transitive deps and their .so files are resolved automatically.
           # ════════════════════════════════════════════════════════════════
-          PKGS="zsh eza bat fzf ripgrep git openssh curl dpkg"
+          PKGS="zsh eza bat fzf ripgrep git openssh curl dpkg apt gpgv termux-keyring"
 
           # Binary name when it differs from the package name
-          BIN_OVERRIDES="ripgrep=rg openssh=ssh"
+          BIN_OVERRIDES="ripgrep=rg openssh=ssh termux-keyring=NOBIN"
           # ════════════════════════════════════════════════════════════════
 
           echo "→ fetching package index"
@@ -93,6 +93,8 @@ jobs:
             for o in $BIN_OVERRIDES; do
               [ "${o%%=*}" = "$pkg" ] && bin="${o##*=}"
             done
+            # NOBIN: package ships no binary (data-only, e.g. termux-keyring)
+            [ "$bin" = "NOBIN" ] && { echo "  ⚠ $pkg: data-only package, skipping binary extract"; continue; }
             [ -d "$TMP/pkgs/$pkg" ] || { echo "  ⚠ skipping $pkg (not downloaded)"; continue; }
             # xargs exits 123 when any sub-shell returns non-zero (grep -q on non-ELF files).
             # With pipefail that aborts the script. Use find+while instead, no xargs.
@@ -104,6 +106,17 @@ jobs:
             cp "$found" "$BIN/$bin" && chmod 755 "$BIN/$bin"
             echo "  ✓ $bin ($(du -sh "$BIN/$bin" | cut -f1))"
           done
+
+          echo "→ extracting termux keyring"
+          mkdir -p files/etc
+          KEYRING=$(find "$TMP/pkgs/termux-keyring" -name "*.gpg" -o -name "*.asc" 2>/dev/null | head -1)
+          if [ -n "$KEYRING" ]; then
+            cp "$KEYRING" files/etc/termux-keyring.gpg
+            echo "  ✓ keyring: $(basename "$KEYRING")"
+          else
+            echo "  ⚠ keyring not found in termux-keyring package — check package contents:"
+            find "$TMP/pkgs/termux-keyring" -type f 2>/dev/null | head -20 || true
+          fi
 
           echo "→ bundling zsh function files (compinit, add-zsh-hook, is-at-least, …)"
           ZSH_SHARE=$(find "$TMP/pkgs/zsh" -type d -name "functions" | head -1)

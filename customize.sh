@@ -16,17 +16,38 @@ ui_print "━━━━━━━━━━━━━━━━━━━━━━━�
 
 # Persistent user dir — never wiped on update
 mkdir -p "$RESH_HOME/config" "/data/media/0/resh/bin"
-# dpkg-installed packages land under this path (Termux deb internal layout)
-TPFX="/data/adb/resh/data/data/com.termux/files/usr"
+
+# Private rexshell package prefix — survives module updates
+RESH_PKG="/data/adb/resh"
+# Termux .deb packages embed paths like /data/data/com.termux/files/usr/...
+# We redirect their instdir to $RESH_PKG so that layout is preserved correctly.
+TPFX="$RESH_PKG/data/data/com.termux/files/usr"
 mkdir -p \
-  /data/adb/resh/bin /data/adb/resh/lib \
-  /data/adb/resh/var/lib/apt/lists \
+  "$RESH_PKG/bin" "$RESH_PKG/lib" "$RESH_PKG/tmp" \
   "$TPFX/bin" "$TPFX/lib" \
+  "$TPFX/etc/apt/apt.conf.d" \
+  "$TPFX/etc/apt/sources.list.d" \
+  "$TPFX/etc/apt/trusted.gpg.d" \
+  "$TPFX/var/lib/apt/lists/partial" \
+  "$TPFX/var/lib/apt/lists/auxfiles" \
+  "$TPFX/var/cache/apt/archives/partial" \
   "$TPFX/var/lib/dpkg/info" \
   "$TPFX/var/lib/dpkg/updates" \
-  "$TPFX/var/lib/dpkg/alternatives"
-[ -f "$TPFX/var/lib/dpkg/status" ] || touch "$TPFX/var/lib/dpkg/status"
-ui_print "  ✓ persistent dir: $RESH_HOME"
+  "$TPFX/var/lib/dpkg/alternatives" \
+  "$TPFX/var/log/apt"
+[ -f "$TPFX/var/lib/dpkg/status" ]    || touch "$TPFX/var/lib/dpkg/status"
+[ -f "$TPFX/var/lib/dpkg/available" ] || touch "$TPFX/var/lib/dpkg/available"
+
+# Install keyring from module bundle (if present) so 'resh-pkg update' works immediately
+KEYRING_SRC="$MOD/files/etc/termux-keyring.gpg"
+KEYRING_DST="$TPFX/etc/apt/trusted.gpg.d/termux-keyring.gpg"
+if [ -f "$KEYRING_SRC" ] && [ ! -f "$KEYRING_DST" ]; then
+  cp "$KEYRING_SRC" "$KEYRING_DST"
+  ui_print "  ✓ termux keyring installed"
+fi
+
+ui_print "  ✓ persistent prefix: $RESH_PKG"
+ui_print "  ✓ user config dir:   $RESH_HOME"
 
 # Extract all required module files.
 # SKIPUNZIP=1 means Magisk/KSU won't touch the zip — we own everything.
