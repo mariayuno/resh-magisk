@@ -109,13 +109,14 @@ jobs:
 
           echo "→ extracting termux keyring"
           mkdir -p files/etc
-          KEYRING=$(find "$TMP/pkgs/termux-keyring" -name "*.gpg" -o -name "*.asc" 2>/dev/null | head -1)
+          KEYRING=$(find "$TMP/pkgs/termux-keyring" \( -name "*.gpg" -o -name "*.asc" \) -type f 2>/dev/null | head -1)
           if [ -n "$KEYRING" ]; then
             cp "$KEYRING" files/etc/termux-keyring.gpg
             echo "  ✓ keyring: $(basename "$KEYRING")"
           else
-            echo "  ⚠ keyring not found in termux-keyring package — check package contents:"
+            echo "  ⚠ keyring not found — contents:"
             find "$TMP/pkgs/termux-keyring" -type f 2>/dev/null | head -20 || true
+            exit 1
           fi
 
           echo "→ bundling zsh function files (compinit, add-zsh-hook, is-at-least, …)"
