@@ -1,80 +1,56 @@
 #!/system/bin/sh
-# resh — Rex's Shell
-# Canonical runtime launcher
+# resh — rexshell launcher
 
 MOD="/data/adb/modules/rexshell/files"
-RESH_HOME="/sdcard/resh"         # user-visible: config, history (FUSE, no exec)
-RESH_BIN="/data/media/0/resh/bin" # same files as /sdcard/resh/bin but via real ext4 path
-RESH_PKG="/data/adb/resh"         # dpkg-installed packages + database
-TPFX="$RESH_PKG/data/data/com.termux/files/usr"
+RESH="/data/media/0/resh"
+TPFX="$RESH/usr"
 
 export REXSHELL_ACTIVE=1
 export HOME="/data/adb/ssh/root"
 
 mkdir -p \
-  "$RESH_HOME/config" "$RESH_BIN" \
-  "$RESH_PKG/bin" "$RESH_PKG/lib" \
+  "$RESH/bin" \
+  "$RESH/tmp" \
   "$TPFX/bin" "$TPFX/lib" \
-  "$RESH_PKG/var/lib/apt/lists"
+  "$RESH/var/lib/apt/lists" \
+  "$HOME/.config/zsh" \
+  "$HOME/.local/share" \
+  "$HOME/.cache/zsh" \
+  "$HOME/.local/state/zsh"
 
-# Ensure scripts saved by file manager (which strips exec bit via FUSE) are executable
-chmod +x "$RESH_BIN/"* 2>/dev/null || true
+chmod +x "$RESH/bin/"* 2>/dev/null || true
 
-# Auto-restore: dpkg db empty/missing but manifest exists = new device with old sdcard
+# Auto-restore: dpkg db empty but manifest exists = new device, old sdcard
+MANIFEST="$RESH/packages"
 DPKG_STATUS="$TPFX/var/lib/dpkg/status"
-MANIFEST="/sdcard/resh/packages"
 if [ -f "$MANIFEST" ] && [ -s "$MANIFEST" ] && [ ! -s "$DPKG_STATUS" ]; then
-  echo "[resh] package manifest found — restoring $(wc -l < "$MANIFEST") package(s)..."
+  echo "[resh] restoring $(wc -l < "$MANIFEST") package(s)..."
   "$MOD/bin/resh-pkg" restore
 fi
 
-# Priority: user scripts > dpkg-installed > resh-pkg bins > module > system
-export PATH="$RESH_BIN:$TPFX/bin:$RESH_PKG/bin:$MOD/bin:/system/bin:/system/xbin"
-export LD_LIBRARY_PATH="$TPFX/lib:$RESH_PKG/lib:$MOD/lib:/system/lib64:/vendor/lib64"
+export PATH="$RESH/bin:$TPFX/bin:$MOD/bin:/system/bin:/system/xbin"
+export LD_LIBRARY_PATH="$TPFX/lib:$MOD/lib:/system/lib64:/vendor/lib64"
 
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-mkdir -p \
-  "$HOME/.config/zsh" \
-  "$HOME/.local/share" \
-  "$HOME/.cache/zsh" \
-  "$HOME/.local/state/zsh"
-
-# Zsh functions are nested several levels deep.
-# Include the complete tree so autoload can find things like:
-#   Completion/Base/_call_program
-#   VCS_Info/Backends/VCS_INFO_detect_git
-#   Misc/add-zsh-hook
-
 FPATH=""
-
 while IFS= read -r dir; do
-    [ -d "$dir" ] || continue
-
-    if [ -z "$FPATH" ]; then
-        FPATH="$dir"
-    else
-        FPATH="$FPATH:$dir"
-    fi
-done <<EOF
+  [ -d "$dir" ] || continue
+  FPATH="${FPATH:+$FPATH:}$dir"
+done << FEOF
 $(find "$MOD/share/zsh/functions" -type d 2>/dev/null | sort)
-EOF
-
+FEOF
 export FPATH
 
 export ZDOTDIR="$MOD/config/zsh"
-export HISTFILE="$RESH_HOME/history"
+export HISTFILE="$RESH/history"
 export HISTSIZE=1000000
 export SAVEHIST=1000000
+export TMPDIR="$RESH/tmp"
 
 ZSH="$MOD/bin/zsh"
-
-if [ ! -x "$ZSH" ]; then
-    echo "ERROR: bundled zsh not found: $ZSH"
-    exit 1
-fi
-
+[ -x "$ZSH" ] || { echo "ERROR: bundled zsh not found: $ZSH"; exit 1; }
 exec "$ZSH" --login

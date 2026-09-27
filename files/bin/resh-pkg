@@ -1,68 +1,41 @@
 #!/system/bin/sh
-# resh-pkg — thin wrapper around APT + dpkg for rexshell
-# Usage: resh-pkg install <pkg>
-#        resh-pkg remove  <pkg>
-#        resh-pkg update
-#        resh-pkg upgrade
-#        resh-pkg list
-#        resh-pkg files   <pkg>
-#        resh-pkg restore
+# resh-pkg — APT/dpkg wrapper for rexshell
 
 MOD="/data/adb/modules/rexshell/files"
-RESH_PKG="/data/adb/resh"
-# Termux deb packages expect this internal prefix layout
-TPFX="$RESH_PKG/data/data/com.termux/files/usr"
-# User-visible persistent manifest (survives /data wipes via sdcard)
-MANIFEST="/sdcard/resh/packages"
+RESH="/data/media/0/resh"
+TPFX="$RESH/usr"
+MANIFEST="$RESH/packages"
 
 die() { echo "resh-pkg: $*" >&2; exit 1; }
 
-# ─────────────────────────────────────────────
-# APT/dpkg environment
-# All tools must run against the private rexshell prefix, never the real
-# Termux app at /data/data/com.termux.
-# ─────────────────────────────────────────────
-
 apt_env() {
   export HOME="/data/adb/ssh/root"
-  export TMPDIR="$RESH_PKG/tmp"
-  # APT finds its config via APT_CONFIG
+  export TMPDIR="$RESH/tmp"
   export APT_CONFIG="$TPFX/etc/apt/apt.conf"
-  # dpkg finds its admindir and instdir via DPKG_ADMINDIR / --root or via apt.conf
   export DPKG_ADMINDIR="$TPFX/var/lib/dpkg"
-  # Library path: bundled libs first, then system
   export LD_LIBRARY_PATH="$MOD/lib:$TPFX/lib:/system/lib64:/vendor/lib64"
   export PATH="$MOD/bin:$TPFX/bin:/system/bin"
-  mkdir -p "$RESH_PKG/tmp"
+  mkdir -p "$RESH/tmp"
 }
 
 apt_cmd() {
   apt_env
-  # APT_CONFIG drives everything — no extra flags needed if apt.conf is correct
-  "$MOD/bin/apt" \
-    -o "DPkg::Path=$MOD/bin:/system/bin" \
-    "$@"
+  "$MOD/bin/apt" -o "DPkg::Path=$MOD/bin:/system/bin" "$@"
 }
 
 dpkg_cmd() {
   apt_env
   "$MOD/bin/dpkg" \
-    --root="$RESH_PKG" \
+    --root="$RESH" \
     --admindir="$TPFX/var/lib/dpkg" \
     --force-not-root \
     --force-bad-path \
     "$@"
 }
 
-# ─────────────────────────────────────────────
-# Init: ensure all required directory tree exists
-# Called before any apt/dpkg operation.
-# ─────────────────────────────────────────────
-
 init_prefix() {
   mkdir -p \
-    "$TPFX/bin" \
-    "$TPFX/lib" \
+    "$TPFX/bin" "$TPFX/lib" \
     "$TPFX/etc/apt/apt.conf.d" \
     "$TPFX/etc/apt/sources.list.d" \
     "$TPFX/etc/apt/trusted.gpg.d" \
@@ -73,9 +46,9 @@ init_prefix() {
     "$TPFX/var/lib/dpkg/updates" \
     "$TPFX/var/lib/dpkg/alternatives" \
     "$TPFX/var/log/apt" \
-    "$RESH_PKG/tmp"
+    "$RESH/tmp"
 
-  [ -f "$TPFX/var/lib/dpkg/status" ] || touch "$TPFX/var/lib/dpkg/status"
+  [ -f "$TPFX/var/lib/dpkg/status" ]    || touch "$TPFX/var/lib/dpkg/status"
   [ -f "$TPFX/var/lib/dpkg/available" ] || touch "$TPFX/var/lib/dpkg/available"
 
   write_apt_config
@@ -85,44 +58,28 @@ init_prefix() {
 
 write_apt_config() {
   local conf="$TPFX/etc/apt/apt.conf"
-  # Only rewrite if it doesn't look like ours
   grep -q "rexshell" "$conf" 2>/dev/null && return 0
-
   cat > "$conf" << APTCONF
-// rexshell APT configuration — auto-generated, do not edit by hand
-// Points APT entirely at the private rexshell prefix.
-
-Dir "$RESH_PKG/";
-Dir::State "data/data/com.termux/files/usr/var/lib/apt/";
+// rexshell APT config — auto-generated
+Dir "$RESH/";
+Dir::State "usr/var/lib/apt/";
 Dir::State::status "../../dpkg/status";
-Dir::Cache "data/data/com.termux/files/usr/var/cache/apt/";
-Dir::Etc "data/data/com.termux/files/usr/etc/apt/";
-Dir::Log "data/data/com.termux/files/usr/var/log/apt/";
-
-// Tell APT where dpkg lives
+Dir::Cache "usr/var/cache/apt/";
+Dir::Etc "usr/etc/apt/";
+Dir::Log "usr/var/log/apt/";
 Dir::Bin::dpkg "$MOD/bin/dpkg";
-
-// dpkg options: operate against our private root, not /
 DPkg::Options {
-  "--root=$RESH_PKG";
+  "--root=$RESH";
   "--admindir=$TPFX/var/lib/dpkg";
   "--force-not-root";
   "--force-bad-path";
   "--force-confnew";
 }
-
-// Termux packages use aarch64
 APT::Architecture "aarch64";
 APT::Architectures { "aarch64"; };
-
-// Don't bother with recommends/suggests unless asked
 APT::Install-Recommends "false";
 APT::Install-Suggests "false";
-
-// Use our bundled gpgv
 Dir::Bin::gpg "$MOD/bin/gpgv";
-
-// Sandbox: never touch real Termux
 APT::Sandbox::User "root";
 APTCONF
 }
@@ -130,32 +87,21 @@ APTCONF
 write_sources_list() {
   local sl="$TPFX/etc/apt/sources.list"
   [ -f "$sl" ] && return 0
-  cat > "$sl" << 'SRCLIST'
-deb https://packages.termux.dev/apt/termux-main stable main
-SRCLIST
+  echo "deb https://packages.termux.dev/apt/termux-main stable main" > "$sl"
 }
 
 install_keyring() {
-  local keyring="$TPFX/etc/apt/trusted.gpg.d/termux-keyring.gpg"
-  [ -f "$keyring" ] && return 0
-  # The termux-keyring package ships a .gpg at
-  # /data/data/com.termux/files/usr/share/keyrings/termux-keyring.gpg
-  # We bundle it in the module at files/etc/termux-keyring.gpg
+  local dst="$TPFX/etc/apt/trusted.gpg.d/termux-keyring.gpg"
+  [ -f "$dst" ] && return 0
   if [ -f "$MOD/etc/termux-keyring.gpg" ]; then
-    cp "$MOD/etc/termux-keyring.gpg" "$keyring"
+    cp "$MOD/etc/termux-keyring.gpg" "$dst"
   else
-    echo "resh-pkg: warning: termux-keyring.gpg not found in module — 'resh-pkg update' may fail signature check" >&2
-    echo "resh-pkg: run 'resh-pkg update --allow-insecure' to skip for now" >&2
+    echo "resh-pkg: warning: keyring not found — run 'resh-pkg update --allow-insecure'" >&2
   fi
 }
 
-# ─────────────────────────────────────────────
-# Subcommands
-# ─────────────────────────────────────────────
-
 cmd_update() {
   init_prefix
-  echo "→ updating package lists..."
   if [ "${1:-}" = "--allow-insecure" ]; then
     apt_cmd update --allow-insecure-repositories
   else
@@ -172,23 +118,11 @@ cmd_install() {
   local pkg="$1"
   [ -z "$pkg" ] && die "usage: resh-pkg install <package>"
   init_prefix
-
-  # Ensure we have a package list before trying to install
-  if [ ! -f "$TPFX/var/lib/apt/lists/"*"_Packages" ] 2>/dev/null; then
-    echo "→ no package lists found — running update first..."
-    cmd_update
-  fi
-
-  echo "→ installing $pkg..."
+  ls "$TPFX/var/lib/apt/lists/"*_Packages >/dev/null 2>&1 || { echo "→ no package lists — running update..."; cmd_update; }
   apt_cmd install -y "$pkg" || die "apt install $pkg failed"
-
-  # Record to explicit-install manifest (APT is authoritative for deps,
-  # but the manifest tracks what the user explicitly asked for, enabling
-  # restore on a new device with the same sdcard)
   mkdir -p "$(dirname "$MANIFEST")"
   touch "$MANIFEST"
   grep -qx "$pkg" "$MANIFEST" || echo "$pkg" >> "$MANIFEST"
-
   echo "✓ $pkg installed"
 }
 
@@ -197,10 +131,7 @@ cmd_remove() {
   [ -z "$pkg" ] && die "usage: resh-pkg remove <package>"
   init_prefix
   apt_cmd remove -y "$pkg" || die "apt remove $pkg failed"
-  # Remove from manifest
-  if [ -f "$MANIFEST" ]; then
-    grep -v "^${pkg}$" "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST" || true
-  fi
+  [ -f "$MANIFEST" ] && { grep -v "^${pkg}$" "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST" || true; }
   echo "✓ $pkg removed"
 }
 
@@ -217,9 +148,8 @@ cmd_files() {
 }
 
 cmd_restore() {
-  [ -f "$MANIFEST" ] || { echo "no manifest at $MANIFEST — nothing to restore"; exit 0; }
+  [ -f "$MANIFEST" ] || { echo "no manifest — nothing to restore"; exit 0; }
   init_prefix
-  # Ensure lists are fresh before bulk install
   cmd_update
   local count=0 failed=0
   while IFS= read -r pkg; do
@@ -228,11 +158,11 @@ cmd_restore() {
     if apt_cmd install -y "$pkg"; then
       count=$((count + 1))
     else
-      echo "  ⚠ $pkg failed — skipping"
+      echo "  ⚠ $pkg failed"
       failed=$((failed + 1))
     fi
   done < "$MANIFEST"
-  echo "restore complete: $count installed, $failed failed"
+  echo "restore: $count ok, $failed failed"
   [ "$failed" -eq 0 ] || exit 1
 }
 
@@ -245,12 +175,6 @@ case "${1:-}" in
   list)    cmd_list ;;
   files)   cmd_files "$2" ;;
   *)
-    echo "usage: resh-pkg install <pkg>"
-    echo "       resh-pkg remove  <pkg>"
-    echo "       resh-pkg update"
-    echo "       resh-pkg upgrade"
-    echo "       resh-pkg restore"
-    echo "       resh-pkg list"
-    echo "       resh-pkg files   <pkg>"
+    echo "usage: resh-pkg install|remove|update|upgrade|restore|list|files"
     ;;
 esac
