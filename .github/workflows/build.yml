@@ -34,10 +34,10 @@ jobs:
           # ADD PACKAGES HERE — just the Termux package name, one per line.
           # Transitive deps and their .so files are resolved automatically.
           # ════════════════════════════════════════════════════════════════
-          PKGS="zsh eza bat fzf ripgrep git openssh curl dpkg apt gpgv termux-keyring"
+          PKGS="zsh eza bat fzf ripgrep git openssh curl dpkg apt gpgv termux-keyring libc++"
 
           # Binary name when it differs from the package name
-          BIN_OVERRIDES="ripgrep=rg openssh=ssh termux-keyring=NOBIN"
+          BIN_OVERRIDES="ripgrep=rg openssh=ssh termux-keyring=NOBIN libc++=NOBIN"
           # ════════════════════════════════════════════════════════════════
 
           echo "→ fetching package index"
@@ -130,7 +130,7 @@ jobs:
           fi
 
           echo "→ bundling .so deps"
-          SKIP="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so libandroid.so libc++.so libgcc_s.so libgcc.so"
+          SKIP="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so libandroid.so libgcc_s.so libgcc.so"
           for pkg in $ALL; do
             [ -d "$TMP/pkgs/$pkg" ] || continue
             find "$TMP/pkgs/$pkg" \( -name "*.so" -o -name "*.so.*" \) | while read -r so; do
