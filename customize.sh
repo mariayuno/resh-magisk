@@ -6,8 +6,10 @@ ui_print "━━━━━━━━━━━━━━━━━━━━━━━�
 ui_print "  rexshell"
 ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Extract files
-unzip -o "$ZIPFILE" 'files/*' -d "$MOD" >&2
+# Extract all required module files.
+# SKIPUNZIP=1 means Magisk/KSU won't touch the zip — we own everything.
+# module.prop MUST land in $MODPATH or KSU refuses to register the module.
+unzip -o "$ZIPFILE" 'files/*' 'system/*' 'service.sh' 'module.prop' -d "$MOD" >&2
 chmod -R 755 "$MOD/files/bin"
 
 # Write .profile SSH hook

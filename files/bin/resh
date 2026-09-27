@@ -21,6 +21,13 @@ mkdir -p \
   "$HOME/.cache/zsh" \
   "$HOME/.local/state/zsh"
 
+# Point zsh at the bundled function files (compinit, add-zsh-hook, is-at-least, …).
+# The Termux zsh binary is compiled with --prefix=/data/data/com.termux/files/usr,
+# so on a real Android device it finds nothing in its default fpath.
+# We bundle the function dir from the Termux zsh .deb into files/share/zsh/functions/
+# and prepend it here so autoload works before any .zshrc runs.
+export FPATH="$MOD/share/zsh/functions${FPATH:+:$FPATH}"
+
 export ZDOTDIR="$MOD/config/zsh"
 export HISTFILE="$HOME/.local/state/zsh/history"
 export HISTSIZE=1000000
