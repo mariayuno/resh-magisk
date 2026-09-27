@@ -1,0 +1,116 @@
+#!/system/bin/sh
+# resh-pkg — install Termux packages into the resh module at runtime
+# Usage: resh-pkg install <pkg> [<binary-name>]
+#        resh-pkg list
+
+MOD="/data/adb/modules/rexshell/files"
+BIN="$MOD/bin"
+LIB="$MOD/lib"
+TMP="$(mktemp -d)"
+REPO="https://packages.termux.dev/apt/termux-main"
+ARCH="aarch64"
+SKIP_LIBS="libc.so libm.so libdl.so libz.so libstdc++.so liblog.so libandroid.so libc++.so libgcc_s.so libgcc.so"
+
+die() { echo "resh-pkg: $*" >&2; rm -rf "$TMP"; exit 1; }
+
+fetch_index() {
+  echo "→ fetching package index..."
+  curl -sL "$REPO/dists/stable/main/binary-$ARCH/Packages.xz" | xz -d > "$TMP/Packages" 2>/dev/null \
+  || curl -sL "$REPO/dists/stable/main/binary-$ARCH/Packages.gz" | gunzip > "$TMP/Packages" \
+  || die "failed to fetch package index"
+}
+
+fetch_pkg() {
+  local pkg="$1"
+  [ -d "$TMP/pkgs/$pkg" ] && return 0
+  local fname
+  fname=$(awk "/^Package: ${pkg}$/{f=1} f&&/^Filename:/{print \$2;exit}" "$TMP/Packages")
+  [ -z "$fname" ] && { echo "  ⚠ $pkg not in index"; return 1; }
+  mkdir -p "$TMP/pkgs"
+  curl -sL "$REPO/$fname" -o "$TMP/pkgs/$pkg.deb" || return 1
+  dpkg-deb -x "$TMP/pkgs/$pkg.deb" "$TMP/pkgs/$pkg"
+}
+
+resolve_deps() {
+  local queue="$1" resolved=""
+  while [ -n "$queue" ]; do
+    local pkg; pkg=$(echo "$queue" | awk '{print $1}')
+    queue=$(echo "$queue" | cut -d' ' -f2-)
+    [ "$queue" = "$pkg" ] && queue=""
+    echo " $resolved " | grep -q " $pkg " && continue
+    resolved="$resolved $pkg"
+    local deps
+    deps=$(awk "
+      /^Package: ${pkg}$/ { f=1 }
+      f && /^Depends:/    { gsub(/^Depends: /,\"\"); print; f=0 }
+      f && /^$/           { f=0 }
+    " "$TMP/Packages" \
+      | tr ',' '\n' | sed 's/|[^,]*//' | sed 's/ (.*//' \
+      | tr -d ' ' | grep -v '^$' || true)
+    for dep in $deps; do
+      echo " $resolved $queue " | grep -q " $dep " || queue="$queue $dep"
+    done
+  done
+  echo "$resolved"
+}
+
+cmd_install() {
+  local pkg="$1" bin="${2:-$1}"
+  [ -z "$pkg" ] && die "usage: resh-pkg install <package> [binary-name]"
+
+  fetch_index
+
+  echo "→ resolving deps for $pkg..."
+  local all
+  all=$(resolve_deps "$pkg")
+  echo "  packages to fetch: $(echo $all | wc -w)"
+
+  echo "→ downloading..."
+  for p in $all; do
+    fetch_pkg "$p" && echo "  ✓ $p" || true
+  done
+
+  echo "→ extracting binary '$bin' from '$pkg'..."
+  local found=""
+  while IFS= read -r f; do
+    file "$f" | grep -q ELF && found="$f" && break || true
+  done < <(find "$TMP/pkgs/$pkg" -name "$bin" -type f 2>/dev/null)
+
+  if [ -z "$found" ]; then
+    # list what binaries ARE available to help the user
+    echo "  ⚠ binary '$bin' not found. Available ELF files in $pkg:"
+    find "$TMP/pkgs/$pkg" -type f | xargs -I{} sh -c 'file {} | grep -q ELF && echo "    {}"' 2>/dev/null || true
+    rm -rf "$TMP"
+    exit 1
+  fi
+
+  cp "$found" "$BIN/$bin" && chmod 755 "$BIN/$bin"
+  echo "  ✓ installed $bin → $BIN/$bin"
+
+  echo "→ bundling .so deps..."
+  local count=0
+  for p in $all; do
+    [ -d "$TMP/pkgs/$p" ] || continue
+    find "$TMP/pkgs/$p" \( -name "*.so" -o -name "*.so.*" \) 2>/dev/null | while read -r so; do
+      name="$(basename "$so")"
+      echo " $SKIP_LIBS " | grep -q " $name " && continue
+      [ -f "$LIB/$name" ] && continue
+      cp "$so" "$LIB/$name"
+      echo "  ✓ $name"
+    done
+  done
+
+  rm -rf "$TMP"
+  echo "done. Restart resh or run: export PATH=\"$BIN:\$PATH\""
+}
+
+cmd_list() {
+  echo "installed binaries:"
+  ls -1 "$BIN"
+}
+
+case "${1:-}" in
+  install) cmd_install "$2" "${3:-}" ;;
+  list)    cmd_list ;;
+  *)       echo "usage: resh-pkg install <package> [binary-name]"; echo "       resh-pkg list" ;;
+esac
